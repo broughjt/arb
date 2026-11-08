@@ -1,0 +1,8 @@
+[package]
+name = "arb-core"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Jackson Brough"]
+license = "MIT"
+description = "Nodes, links and transclusions for Zettelkasten-style notes in Typst bundles."
+compiler = "0.15.1"
