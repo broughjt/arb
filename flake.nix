@@ -31,8 +31,8 @@
             typst
           ];
 
-          # Typst reads the packages from the store, so editing one takes
-          # effect only after re-entering the dev shell.
+          # If you edit a Typst package here, you need to re-enter the dev shell
+          # for the change to take effect inside the environment.
           TYPST_PACKAGE_PATH = arbCore;
         };
       });

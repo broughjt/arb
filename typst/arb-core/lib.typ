@@ -2,6 +2,7 @@
 // - Forester: https://www.jonmsterling.com/index/
 // - Org-roam: https://www.orgroam.com/
 // - Andy Matuschak's Evergreen Notes: https://notes.andymatuschak.org/About_these_notes
+// - Hanwen's weibian: https://github.com/hanwenguo/weibian
 
 // Why are we doing it this way? Why does it need to be so complicated? Why
 // recursive crawling?
@@ -29,13 +30,13 @@
 // recursively crawl the Typst content to build the node graph, and in Phase 2,
 // we render each node (resolving transclusions) to its own HTML document.
 
-#let _marker(kind, fields) = metadata((..fields, weibian: true, kind: kind))
+#let _marker(kind, fields) = metadata((..fields, arb: true, kind: kind))
 
 #let _marker-value(value) = {
   if type(value) == content and value.func() == metadata {
     let data = value.fields().value
 
-    if type(data) == dictionary and data.at("weibian", default: false) == true {
+    if type(data) == dictionary and data.at("arb", default: false) == true {
       data
     } else {
       none

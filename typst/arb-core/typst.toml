@@ -4,5 +4,5 @@ version = "0.1.0"
 entrypoint = "lib.typ"
 authors = ["Jackson Brough"]
 license = "MIT"
-description = "Nodes, links and transclusions for Zettelkasten-style notes in Typst bundles."
+description = "A personal ripoff of forester for scientific Zettelkasten notes in Typst"
 compiler = "0.15.1"
