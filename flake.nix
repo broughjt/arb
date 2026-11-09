@@ -22,7 +22,15 @@
             cp -r ${source} $out/local/${manifest.name}/${manifest.version}
           '';
 
-        arbCore = localTypstPackage ./typst/arb-core;
+        # Typst takes a single package path, so the local packages need to share
+        # a single `local/` tree.
+        localPackages = pkgs.symlinkJoin {
+          name = "typst-local-packages";
+          paths = map localTypstPackage [
+            ./typst/arb-core
+            ./typst/prelude
+          ];
+        };
 
         # Typst Universe packages, laid out as Typst's package cache,
         # `preview/<name>/<version>`, so that Typst never downloads them.
@@ -64,7 +72,7 @@
 
           # If you edit a Typst package here, you need to re-enter the dev shell
           # for the change to take effect inside the environment.
-          TYPST_PACKAGE_PATH = arbCore;
+          TYPST_PACKAGE_PATH = localPackages;
           TYPST_PACKAGE_CACHE_PATH = previewPackages;
         };
       });
