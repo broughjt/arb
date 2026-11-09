@@ -3,5 +3,5 @@ name = "arb"
 version = "0.1.0"
 entrypoint = "lib.typ"
 authors = ["Jackson Brough"]
-description = "The HTML site template for Jackson's notes, built on arb-core"
+description = "The template for arb notes"
 compiler = "0.15.1"
