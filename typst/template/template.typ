@@ -255,17 +255,9 @@
   )
 
   let article = html.article(class: "node")[
-    // TODO: Update this comment
-    // A hidden carrier for the search index's facet/meta values. Placed as a
-    // direct child of `article.node` (the pagefind `--root-selector`) and
-    // *outside* the excluded regions (`.node-meta` is excluded, so its
-    // taxon/id/tag text never reaches the index) so pagefind still reads these
-    // attributes. taxon and each tag become `data-pagefind-filter` values
-    // (accumulated per key -> `filters.taxon` / `filters.tag`); the id rides as
-    // `data-pagefind-meta` (title is auto-captured from the `<h1>`). The
-    // element carries no text, so it adds nothing to the indexed content, and
-    // `hidden` keeps it out of the rendered page and the a11y tree. See
-    // .scratch/search-design.md -> "Facets".
+    // Pagefind indexes `article.node` but skips `.node-meta`, so the taxon,
+    // tags and id it filters and labels results by ride on this hidden element,
+    // which has no text of its own.
     #html.elem("div", attrs: (
       "class": "pagefind-attrs",
       "hidden": "",
@@ -323,11 +315,11 @@
   ]
 
   html.html(lang: "en")[
-    // TODO: Explain why we aren't just Typst's default head generation.
-    //
-    // Keep this `html.head` call in sync with Typst's default head generation (pinned rev):
+    // Typst generates a default <head> only when the document has no <html> of
+    // its own, and offers no way to add to it. We need our own head for the
+    // stylesheet and script and our own <body> for `data-node-id`, so we
+    // replicate the defaults here, as of:
     //   https://github.com/typst/typst/blob/c93cf32f6f08b6085efafe2217efd746f830663d/crates/typst-html/src/document.rs#L314
-    // and the `<html lang>` attribute set alongside it in `finalize_dom`:
     //   https://github.com/typst/typst/blob/c93cf32f6f08b6085efafe2217efd746f830663d/crates/typst-html/src/document.rs#L306
     #html.head[
       #html.meta(charset: "utf-8")
@@ -356,8 +348,9 @@
     ],
   )
 
-  // TODO: Handle heading offsets
-  // TODO: Is this still relevant?
+  // TODO: Handle heading offsets. The current corpus doesn't have them
+  // (11-09-2026), but remember working on that a while ago? It should supported
+  // eventually?
 
   html.section(class: "transclusion block")[
     #html.details(open: expanded, class: "transclusion-details")[
