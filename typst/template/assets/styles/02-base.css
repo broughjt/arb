@@ -1,0 +1,274 @@
+/* SPDX-License-Identifier: CC0-1.0 */
+/* 02-base — element-level typography and prose surfaces, ported from hanwen.io's
+   weibian.css and adapted to the bundle DOM. Key adaptation: heading
+   numbering uses the template-emitted `data-number` attribute (see
+   HANWEN_CLONE_PLAN.md "hard parts") instead of hanwen's CSS-counter chain. */
+
+/* ----- Base ----- */
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--color-text);
+  background-color: var(--color-background);
+  /* No hyphenation: prose is ragged-right at a wide measure, so auto-hyphens
+     mostly idle and occasionally produce bad breaks (e.g. "funda-/mental" in
+     titles); `text-wrap: pretty` already smooths the rag. Revisit if/when we
+     add a mobile layout, where the narrow column makes hyphenation worthwhile. */
+  text-wrap: pretty;
+  accent-color: var(--color-accent);
+}
+
+/* Base anchor reset — links inherit text color and decoration by default;
+   role-specific link styling lives in 06-links.css. */
+a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+/* ----- Headings ----- */
+
+:is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-heading);
+  line-height: var(--line-height-heading);
+  margin-block-end: 0;
+  text-wrap: balance;
+}
+
+:is(h1, h2, h3, h4) {
+  margin-block-start: var(--space-sm);
+}
+
+:is(h5, h6) {
+  margin-block-end: 1lh;
+}
+
+:is(h5, h6, p):has(+ math[display="block"]) {
+  margin-block-end: var(--space-sm);
+}
+
+:is(h5, h6) {
+  margin-block-start: 0;
+}
+
+p {
+  margin-block-start: var(--space-sm);
+  /* Butterick: paragraph spacing 50–100% of body size, never a full blank line.
+     0.6lh ≈ 84% of the 20px body; was hanwen's 1lh (~140%). */
+  margin-block-end: 0.6lh;
+}
+
+p:last-child,
+p:has(+ section, + ul, + ol, + pre) {
+  margin-block-end: var(--space-sm);
+}
+
+/* ----- Heading sizes (mainmatter) ----- */
+/* Transclusion summary titles are resized in 07-transclusions.css with a
+   higher-specificity selector. */
+
+.node-mainmatter :is(h2) {
+  font-size: var(--font-size-heading-lg);
+}
+
+.node-mainmatter :is(h3) {
+  font-size: var(--font-size-heading-md);
+}
+
+.node-mainmatter :is(h4) {
+  font-size: var(--font-size-heading-sm);
+}
+
+.node-mainmatter :is(h5, h6) {
+  font-size: var(--font-size-heading-xs);
+}
+
+/* ----- Heading numbering (template-driven via data-number) ----- */
+/* Regular mainmatter headings get a "N. " prefix. Transclusion summary titles
+   (which carry their own taxon span) are numbered in 07-transclusions.css. */
+
+.node-mainmatter
+  :is(h2, h3, h4, h5, h6).toc-heading[data-number]:not(.transclusion-title)::before {
+  content: attr(data-number) ". ";
+}
+
+/* ----- Code ----- */
+
+pre,
+code {
+  font-family: var(--font-mono); /* JuliaMono — Round T ("V1") */
+  border-radius: var(--radius);
+}
+
+/* Inline code is tinted (no background). */
+code:not(pre code) {
+  color: var(--color-text-emphasis);
+  font-size: var(--font-size-xs);
+  padding: 0.2em;
+}
+
+/* Block code runs bare, like hanwen and our block math — Round A2
+   (2026-07-02) removed the Round-2 bg-dim surface: its rationale was that
+   unhighlighted blocks blend into prose, and the Agda aspect-class palette
+   (12-agda.css) now does that differentiation.
+
+   Round μ (2026-06-11): preserve authored lines rather than soft-wrapping code,
+   and size the block so an 80-column Agda line fits the 85ex reading column. */
+pre {
+  font-size: calc(var(--font-size-base) * 0.72);
+  line-height: 1.35;
+  margin-block-start: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* ----- Math (native MathML) ----- */
+
+math {
+  /* Latin Modern Math at 1em — Round T ("W1", "X"): the classic LaTeX face;
+     the old 1.12em upscale read too big against the text. */
+  font-family: var(--font-math);
+  font-size: 1em;
+}
+
+/* Do NOT set `display` here: native MathML resolves <math display="block"> to
+   `display: block math`, and overriding it to plain `block` destroys the math
+   layout (tokens stack vertically). Only adjust spacing/overflow. */
+math[display="block"] {
+  margin-block: var(--space-md);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* ----- Media ----- */
+
+img {
+  object-fit: cover;
+  max-inline-size: 100%;
+}
+
+figure {
+  text-align: center;
+}
+
+/* Typst-framed figures are used for layout-dependent content such as
+   Fletcher/CeTZ diagrams, which Typst's semantic HTML export cannot lower
+   directly yet. `html.frame` emits an inline SVG with fixed black strokes; in
+   dark mode we invert it to keep diagrams legible. */
+figure.typst {
+  display: flex;
+  justify-content: center;
+}
+
+/* Scale the diagram down to fit the reading column instead of letting it
+   overflow into a scroll box. Typst's `html.frame` hardcodes the SVG's size as
+   inline `width`/`height` in em; `max-inline-size` caps the width, and
+   `height: auto` lets it track so the aspect ratio is preserved. The `auto`
+   needs `!important` purely to win over that tool-emitted inline `height` —
+   without it the box keeps the intrinsic height and the scaled diagram sits in
+   a letterbox. Scaling (rather than scrolling) also avoids the overflow trap:
+   `overflow-x: auto` forces `overflow-y` to compute to `auto`, so a horizontal
+   scrollbar would clip the diagram's bottom row (Firefox). */
+figure.typst svg {
+  max-inline-size: 100%;
+  height: auto !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  figure.typst svg,
+  svg.typst-frame {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+
+figcaption {
+  font-style: italic;
+  padding: 0.1875rem;
+}
+
+/* ----- Lists ----- */
+
+.node-mainmatter :is(ul, ol) {
+  margin-block-start: var(--space-sm);
+  margin-block-end: var(--space-sm);
+  padding-inline-start: 1.35em;
+}
+
+.node-mainmatter li + li {
+  margin-block-start: 0.15em;
+}
+
+.node-mainmatter li > :is(ul, ol) {
+  margin-block: 0.2em 0.35em;
+}
+
+ol {
+  list-style-type: decimal;
+}
+
+ol li ol {
+  list-style-type: lower-alpha;
+}
+
+ol li ol li ol {
+  list-style-type: lower-roman;
+}
+
+/* ----- Blockquotes ----- */
+
+blockquote {
+  border-inline-start: 1px solid light-dark(#e0e0e0, #303030);
+  color: var(--color-text-faded);
+  margin-block: var(--space-md);
+  margin-inline-start: 0;
+  padding-inline-start: var(--space-md);
+  font-style: normal;
+}
+
+blockquote p {
+  margin-block: 0.35lh;
+}
+
+/* ----- Tables ----- */
+
+table {
+  inline-size: 100%;
+  margin-block: var(--space-md);
+  border-collapse: collapse;
+}
+
+thead {
+  border-block-end: 1px solid light-dark(#e0e0e0, #303030);
+}
+
+tbody tr + tr {
+  border-block-start: 1px solid light-dark(#e0e0e0, #303030);
+}
+
+:is(th, td) {
+  padding: 0.35rem 0.55rem;
+  vertical-align: top;
+}
+
+th {
+  text-align: start;
+}
+
+/* ----- Rules & marks ----- */
+
+hr {
+  margin-block: var(--space-lg);
+  background-color: transparent;
+  border: 0 none;
+  border-block-start: 1px solid light-dark(#e0e0e0, #303030);
+  inline-size: 100%;
+  block-size: 0;
+}
+
+mark {
+  background-color: var(--color-mark);
+}

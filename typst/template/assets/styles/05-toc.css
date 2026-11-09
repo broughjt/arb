@@ -1,0 +1,76 @@
+/* SPDX-License-Identifier: CC0-1.0 */
+/* 05-toc — the rail's typography: ToC plus the contexts/backlinks/related
+   sections that share aside.node-rail with it (Round L amendment #4).
+
+   Round L settled picks (2026-06-11): sans apparatus voice ("LB2", --font-meta
+   — the frontmatter metadata face), muted grey ("LC2", fg-dim — the
+   frontmatter-key color, dropping the link-blue-ish fg-alt), and one matched
+   treatment for all rail headings (Contents / Contexts / Backlinks / Related),
+   Quartz-style. Numbering still reads the template-emitted `data-number`. */
+
+.node-rail {
+  font-family: var(--font-meta);
+  font-size: var(--rail-font-size);
+  color: var(--color-text-faded);
+}
+
+/* Matched rail headings. h2/h3 are pinned to --font-heading in 02-base, so
+   the family needs restating here. Round L2 settled (2026-06-11): "LG3"
+   darker bold — full text color against the faded rail text — at "LI2"
+   1.1em (--rail-heading-size). */
+.node-rail :is(.toc-title, .backmatter-section-title) {
+  font-family: var(--font-meta);
+  font-size: var(--rail-heading-size);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-block: 0 var(--space-xs);
+  color: var(--color-text);
+}
+
+.toc-list {
+  list-style: none;
+  padding-inline-start: 0;
+  margin: 0;
+}
+
+/* Nested levels indent. */
+.toc-list .toc-list {
+  padding-inline-start: 0.875rem;
+  margin-inline-start: 0.25rem;
+}
+
+.toc-item {
+  padding-block: 0.0625rem;
+  line-height: 1.35;
+}
+
+.toc-link {
+  color: var(--color-text-faded);
+  text-decoration: none;
+  border-radius: 0.2em;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.toc-link[data-number]::before {
+  content: attr(data-number) ". ";
+}
+
+.toc-link:hover {
+  color: var(--color-text);
+  background-color: var(--color-accent-hover);
+}
+
+.toc-taxon {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-meta);
+  font-size: 0.78em;
+  font-weight: 500;
+  margin-inline-start: 0.45em;
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  background-color: var(--chip-neutral-bg);
+  color: var(--chip-neutral-fg);
+}

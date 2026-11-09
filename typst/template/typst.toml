@@ -1,0 +1,7 @@
+[package]
+name = "arb"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Jackson Brough"]
+description = "The HTML site template for Jackson's notes, built on arb-core"
+compiler = "0.15.1"

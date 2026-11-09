@@ -1,0 +1,148 @@
+/* Command-palette search (assets/search.ts). Baseline styling: a centered modal
+ * dialog near the top of the viewport, a surface card matching the popover, and
+ * result rows that reuse the site's taxon/tag chips. Tunable dimensions are
+ * `--search-*` custom properties so the look can be driven from /tuner; the
+ * `--search-debounce` knob is unitless and read by the island. */
+
+:root {
+  --search-debounce: 120; /* ms; read by assets/search.ts */
+  --search-panel-width: 40rem;
+  --search-panel-top: 12vh;
+  --search-panel-max-height: 70vh;
+  --search-overlay-bg: light-dark(rgb(0 0 0 / 0.28), rgb(0 0 0 / 0.55));
+  --search-active-bg: light-dark(#eaeaea, #2a2a2a);
+  --search-mark-bg: var(--chip-yellow-bg);
+  --search-meta-gap: 0.25rem;
+  --search-icon-url: url("data:image/svg+xml,%3Csvg%20viewBox=%220%200%2016%2016%22%20fill=%22none%22%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3Ccircle%20cx=%226.5%22%20cy=%226.5%22%20r=%225.75%22%20stroke=%22black%22%20stroke-width=%221.5%22/%3E%3Cline%20x1=%2211.0607%22%20y1=%2211%22%20x2=%2215%22%20y2=%2214.9393%22%20stroke=%22black%22%20stroke-width=%221.5%22%20stroke-linecap=%22round%22/%3E%3C/svg%3E");
+}
+
+.search-dialog {
+  margin: var(--search-panel-top) auto auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  width: min(var(--search-panel-width), 92vw);
+  max-height: var(--search-panel-max-height);
+  overflow: visible;
+  color: var(--color-text);
+}
+
+.search-dialog::backdrop {
+  background: var(--search-overlay-bg);
+}
+
+.search-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--search-panel-max-height);
+  background: var(--color-background);
+  border: 1px solid light-dark(#e0e0e0, #303030);
+  border-radius: var(--radius);
+  box-shadow: 0 0.5rem 2rem light-dark(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.6));
+  font-family: var(--font-meta);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+}
+
+.search-field {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-block-end: 1px solid light-dark(#e0e0e0, #303030);
+}
+
+.search-icon {
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  background: currentColor;
+  color: color-mix(in oklab, var(--color-text) 55%, transparent);
+  -webkit-mask: var(--search-icon-url) center / contain no-repeat;
+  mask: var(--search-icon-url) center / contain no-repeat;
+}
+
+.search-input {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.05rem;
+}
+
+.search-input:focus {
+  outline: none;
+}
+
+.search-status {
+  margin: 0;
+  padding: 0 var(--space-md);
+  padding-block-start: var(--space-sm);
+  font-size: var(--font-size-xs);
+  color: color-mix(in oklab, var(--color-text) 60%, transparent);
+}
+
+.search-status:empty {
+  display: none;
+}
+
+.search-results {
+  margin: 0;
+  padding: var(--space-sm);
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.search-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.search-result.is-active {
+  background: var(--search-active-bg);
+}
+
+.search-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--search-meta-gap);
+  font-family: var(--font-meta);
+  font-size: calc(var(--font-size-xs) * var(--meta-font-scale));
+}
+
+.search-result-title {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.search-result-excerpt {
+  font-size: var(--font-size-xs);
+  color: color-mix(in oklab, var(--color-text) 70%, transparent);
+  /* Keep rows compact: clamp the excerpt to two lines. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.search-result-excerpt mark {
+  background: var(--search-mark-bg);
+  color: inherit;
+  border-radius: 2px;
+}

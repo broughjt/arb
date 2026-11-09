@@ -14,21 +14,40 @@
 
         # A Typst package directory laid out the way Typst looks up `@local`
         # packages, `local/<name>/<version>`, with the name and version taken
-        # from its typst.toml.
-        localTypstPackage = source:
-          let manifest = (pkgs.lib.importTOML (source + "/typst.toml")).package;
-          in pkgs.runCommand "typst-local-${manifest.name}" { } ''
+        # from its typst.toml. `files` maps a file name in the package to a
+        # store path to copy there, for files that come from Nix rather than
+        # from the source directory.
+        localTypstPackage = source: files:
+          let
+            manifest = (pkgs.lib.importTOML (source + "/typst.toml")).package;
+            directory = "$out/local/${manifest.name}/${manifest.version}";
+          in
+          pkgs.runCommand "typst-local-${manifest.name}" { } ''
             mkdir -p $out/local/${manifest.name}
-            cp -r ${source} $out/local/${manifest.name}/${manifest.version}
+            cp -r ${source} ${directory}
+            chmod u+w ${directory}
+            ${pkgs.lib.concatLines (pkgs.lib.mapAttrsToList
+              (name: path: "cp ${path} ${directory}/${name}")
+              files)}
           '';
+
+        # The template's citation style, pinned to a revision of the CSL
+        # project's styles repository.
+        chicagoAuthorDateCsl = pkgs.fetchurl {
+          url = "https://raw.githubusercontent.com/citation-style-language/styles/3220666a2b6918cccfeca3d86f6f7d9ea9661236/chicago-author-date.csl";
+          hash = "sha256-AC+t541+T+nUKTaha0OoBmsJcBP2JV30Cxv7pmMe/5s=";
+        };
 
         # Typst takes a single package path, so the local packages need to share
         # a single `local/` tree.
         localPackages = pkgs.symlinkJoin {
           name = "typst-local-packages";
-          paths = map localTypstPackage [
-            ./typst/arb-core
-            ./typst/prelude
+          paths = [
+            (localTypstPackage ./typst/arb-core { })
+            (localTypstPackage ./typst/prelude { })
+            (localTypstPackage ./typst/template {
+              "chicago-author-date.csl" = chicagoAuthorDateCsl;
+            })
           ];
         };
 

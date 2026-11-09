@@ -1,0 +1,64 @@
+/* SPDX-License-Identifier: CC0-1.0 */
+/* 06-links — link + citation styling. This is the one deliberate departure from
+   hanwen (HANWEN_CLONE_PLAN.md §4): instead of hanwen's dotted/solid underlines,
+   we keep the Butterick treatment from synthesis §4 — color denotes
+   clickability, no underline, hover paints a soft accent wash. */
+
+/* Internal / node links. The hover wash hugs the glyphs ("D1" — Round 2 chose
+   breathing-room padding, but that was walked back 2026-06-09 after the EB
+   Garamond switch: tight looks better with this face). */
+a.node-link {
+  color: var(--color-link);
+  text-decoration: none;
+  border-radius: 0.2em;
+  transition: background-color var(--transition-fast);
+}
+
+/* Visited links keep the link color (Round 2 decision — see 01-tokens.css). */
+
+a.node-link:hover {
+  background-color: var(--color-accent-hover);
+}
+
+/* Formal result references. Authored body-less links to theorem-like nodes
+   render as e.g. “Lemma 00ag” */
+a.node-link.node-ref {
+  white-space: nowrap;
+}
+
+a.node-link.node-ref .node-ref-address {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Citations: every cited reference is a per-entry `a.node-link` (covered above),
+   so each carries the link color + hover wash. The surrounding punctuation
+   (enclosing parens, the "; " delimiter) is plain text and stays body text
+   color — nothing extra is needed here. */
+
+/* External links — same blue as node links, plus a Butterick-inspired degree
+   marker to distinguish off-site navigation without adding an underline. The
+   marker uses body text color so it reads as punctuation rather than a second
+   competing accent. Internal node links use relative hrefs, so this attribute
+   selector only catches genuine off-site links. */
+.node-mainmatter a[href^="http"]:not(.node-link) {
+  color: var(--color-link);
+  text-decoration: none;
+  border-radius: 0.2em;
+  transition: background-color var(--transition-fast);
+}
+
+.node-mainmatter a[href^="http"]:not(.node-link)::after {
+  content: "\FEFF°";
+  display: inline-block;
+  position: relative;
+  margin-left: 0.1em;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.node-mainmatter a[href^="http"]:not(.node-link):hover {
+  background-color: var(--color-accent-hover);
+}

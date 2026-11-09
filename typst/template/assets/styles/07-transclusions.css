@@ -1,0 +1,98 @@
+/* SPDX-License-Identifier: CC0-1.0 */
+/* 07-transclusions — transcluded node blocks, ported from hanwen's
+   `.block` + `details/summary` disclosure. A collapsible block with a leading
+   ▸/▾ marker, a numbered title, and a subtle hover wash on nested blocks. */
+
+/* Every transclusion block (outermost included) is indented from its
+   container. Indent is margin-based, so nesting steps right cumulatively. No
+   left rule — the indent alone carries the hierarchy. Round A3 (2026-07-02)
+   halved the original 0.75rem step: with the block wash gone and code blocks
+   bare, the lighter step reads better while still marking nesting. */
+.transclusion.block {
+  margin-inline-start: 0.375rem;
+  padding-inline: 0.25rem 0.375rem;
+  padding-block: 0.25rem;
+  border-radius: var(--radius);
+}
+
+/* Hover wash on the summary row only — Round A2 (2026-07-02) replaced
+   hanwen's whole-block wash, which stacked on nesting and was near-constant
+   on Agda module pages. The summary is the block's one real click target
+   (the disclosure toggle), so it alone advertises interactivity. */
+.transclusion-summary {
+  border-radius: var(--radius);
+  transition: background-color var(--transition-fast);
+}
+
+.transclusion-summary:hover {
+  background-color: var(--color-accent-hover);
+}
+
+/* Disclosure: hide the native marker; Round μ moved the triangle to a leading
+   fixed-width slot, which reads more like an outline control than title
+   punctuation. */
+.transclusion-summary {
+  list-style: none;
+  cursor: pointer;
+  margin-block: var(--space-xs);
+  display: flex;
+  align-items: baseline;
+  gap: 0.3em;
+}
+
+.transclusion-summary::before {
+  content: "▸";
+  flex: 0 0 0.8em;
+  color: var(--color-text-faded);
+  font-size: 0.75em;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.transclusion-details[open] > .transclusion-summary::before {
+  content: "▾";
+}
+
+.transclusion-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Transclusion title — block-heading size, linked and numbered. The two-class
+   selector outranks the per-tag sizes in 02-base. */
+.transclusion-summary .transclusion-title {
+  font-size: var(--font-size-heading-sm);
+  margin-block: 0;
+  display: block;
+}
+
+.transclusion-summary .transclusion-title[data-heading-level="2"] {
+  font-size: var(--font-size-heading-md);
+}
+
+.transclusion-title > a.node-link {
+  color: inherit;
+}
+
+/* Number prefix (e.g. "2. Taxon"), consistent with mainmatter headings and
+   the ToC. */
+.transclusion-title[data-number]::before {
+  content: attr(data-number) ". ";
+  font-weight: 600;
+}
+
+/* Transcluded frontmatter — the same Round-F3 key/value grid as the top-level
+   node header (04-node-header owns the shared grid + chip rules); a
+   transclusion is a compact embedded node, so the block only scales down and
+   tightens here. */
+.transclusion-meta {
+  margin-block-start: 0.35rem;
+  /* Track the top-level dial-in tokens at ~93%/75%, so the F4 sliders move
+     both blocks together. */
+  font-size: calc(var(--font-size-xs) * var(--meta-font-scale) * 0.93);
+  column-gap: calc(var(--meta-key-gap) * 0.75);
+  row-gap: 0.25rem;
+}
+
+.transclusion-body {
+  margin-block-start: var(--space-sm);
+}
