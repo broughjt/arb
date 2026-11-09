@@ -15,6 +15,7 @@
 )
 #import "node-metadata.typ": render-node-meta
 #import "agda.typ": agda-fences, render-agda-block
+#import "theorems.typ": render-theorem, render-proof
 #import "link.typ": (
   is-theorem-like,
   render-node-ref,
@@ -121,6 +122,17 @@
         render-revision-callout(id, revisions, member-nodes)
       }
       #html.section(class: "node-mainmatter")[
+        // Also covers transcluded bodies, which render inside the mainmatter.
+        #show metadata: it => {
+          let value = it.value
+          if type(value) == dictionary and "theorem" in value {
+            render-theorem(value.theorem)
+          } else if type(value) == dictionary and "proof" in value {
+            render-proof(value.proof)
+          } else {
+            it
+          }
+        }
         #show figure: it => html.elem("figure", attrs: (class: "typst"), html.frame(it.body))
         #show raw.where(lang: "agda"): it => render-agda-block(fences, it)
 

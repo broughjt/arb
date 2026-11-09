@@ -5,18 +5,10 @@
 // own link. `template.typ`'s `render-link` routes here.
 
 #import "node.typ": node-taxon, node-link
-
-// Theorem-like taxa carry a "kind word" that a body-less reference renders in
-// front of the node's monospace address (e.g. "Lemma 0079"). The plural form is
-// used when `link-nodes` groups several same-taxon references under one word.
-#let _theorem-like = (
-  "lemma": (singular: "Lemma", plural: "Lemmas"),
-  "theorem": (singular: "Theorem", plural: "Theorems"),
-  "corollary": (singular: "Corollary", plural: "Corollaries"),
-)
+#import "theorems.typ": theorem-kinds
 
 // Whether a node is a formal result that body-less references render specially.
-#let is-theorem-like(node) = node-taxon(node) in _theorem-like
+#let is-theorem-like(node) = node-taxon(node) in theorem-kinds
 
 // One linked, monospace formal-result address: `<a class="node-link node-ref">0079</a>`.
 #let _render-ref-address(target-node) = node-link(
@@ -30,7 +22,7 @@
 #let render-node-ref(target-node) = node-link(
   target-node,
   body: [
-    #html.span(class: "node-ref-kind")[#_theorem-like.at(node-taxon(target-node)).singular]
+    #html.span(class: "node-ref-kind")[#theorem-kinds.at(node-taxon(target-node)).singular]
     #html.span(class: "node-ref-address")[#target-node.id]
   ],
   extra-classes: ("node-ref",),
@@ -59,7 +51,7 @@
   let taxa = nodes.map(node-taxon)
 
   for (id, taxon) in ids.zip(taxa) {
-    if taxon not in _theorem-like {
+    if taxon not in theorem-kinds {
       panic(
         "link-nodes target " + id + " has taxon `" + taxon
           + "`; only lemma/theorem/corollary may be grouped",
@@ -70,7 +62,7 @@
   if nodes.len() == 1 {
     render-node-ref(nodes.first())
   } else if taxa.dedup().len() == 1 {
-    let kind = _theorem-like.at(taxa.first()).plural
+    let kind = theorem-kinds.at(taxa.first()).plural
     [#html.span(class: "node-ref-kind")[#kind] #_join-and(nodes.map(_render-ref-address))]
   } else {
     panic("link-nodes mixed taxa not yet supported: " + taxa.join(", "))
