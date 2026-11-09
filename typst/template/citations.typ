@@ -1,10 +1,9 @@
-#import "model.typ": node-href
-
 // Citation rendering uses Typst's native `cite`/`bibliography` (hayagriva is
 // compiled into Typst), not an external plugin. The authoring helpers below
 // only emit Weibian link markers so the node graph records citation edges; the
 // visible citation text and the per-page bibliography are produced natively in
-// `render-citation`/`render-references`.
+// `cite-group`/`references`. This file renders no HTML; template.typ wraps
+// what it returns.
 
 // We use a CSL style file (fetched by arb's flake into this package) instead
 // of the built-in "chicago-author-date" so that the bibliography style, in-text
@@ -65,45 +64,20 @@
 
 // Rendering API
 
-// Render a citation group (from a marker's `group` metadata) as native Typst
-// citations. A lone citation links to its reference node's page (the native
-// in-page bibliography link is flattened away so there is no nested <a>); a
-// multi-item cluster renders as one grouped CSL run (plain text, matching the
-// previous behavior; graph edges to each reference still exist).
-#let render-citation(group) = {
-  let render-item(item) = cite(
-    label(item.key),
-    form: _native-form(item.form),
-    style: if item.form == "bare" { bytes(bare-citation-xml) } else { auto },
-    supplement: _supplement(item.locator, item.locator-label),
-  )
+// The native citations for a citation group (from a marker's `group`
+// metadata). A multi-item cluster renders as one grouped CSL run.
+#let cite-group(group) = group.map(item => cite(
+  label(item.key),
+  form: _native-form(item.form),
+  style: if item.form == "bare" { bytes(bare-citation-xml) } else { auto },
+  supplement: _supplement(item.locator, item.locator-label),
+)).join()
 
-  if group.len() == 1 {
-    let item = group.first()
-    // Emit the citation as an `a.node-link` (not a bare `link(...)`) so it
-    // picks up the link color + hover wash from 06-links.css, matching other
-    // node links. The inner `show link` flattens the native in-page
-    // bibliography link so there is no nested <a>.
-    html.elem("a", attrs: (href: node-href(item.key), class: "node-link"))[
-      #show link: inner => inner.body
-      #render-item(item)
-    ]
-  } else {
-    show link: inner => inner.body
-    group.map(render-item).join()
-  }
-}
-
-// The per-page "References" bibliography. Native `bibliography` with the default
-// `target: auto` scopes each page's bibliography to the citations in that page's
-// document (including citations pulled in through transclusion).
-#let render-references(bib) = {
-  html.section(class: "backmatter-section")[
-    #html.h3(class: "backmatter-section-title")[References]
-    #bibliography(
-      bib,
-      style: bytes(citation-style-xml),
-      title: none,
-    )
-  ]
-}
+// The per-page bibliography. Native `bibliography` with the default
+// `target: auto` scopes each page's bibliography to the citations in that
+// page's document (including citations pulled in through transclusion).
+#let references(bib) = bibliography(
+  bib,
+  style: bytes(citation-style-xml),
+  title: none,
+)
