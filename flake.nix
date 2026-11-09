@@ -87,14 +87,25 @@
         # nixpkgs' agda, so the two cannot disagree about the corpus.
         agda-annotate = pkgs.haskell.lib.justStaticExecutables
           (pkgs.haskellPackages.callCabal2nix "agda-annotate" ./agda-annotate { });
+
+        # A stopgap build of the notes site until arb's build command exists.
+        # It expects the dev shell's Typst package paths.
+        arb-build = pkgs.writeShellApplication {
+          name = "arb-build";
+          runtimeInputs = with pkgs; [ jq pandoc typst ];
+          text = ''
+            styles=${./typst/template/assets/styles}
+          '' + builtins.readFile ./build.sh;
+        };
       in
       {
         packages = {
-          inherit agda-annotate;
+          inherit agda-annotate arb-build;
         };
 
         devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
+            arb-build
             racket
             typst
           ];
