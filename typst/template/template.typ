@@ -6,18 +6,11 @@
 
 // `target` is a template node
 #let node-link(target, body: none, extra-classes: ()) = {
-  html.elem("a", attrs: (
+  html.a(
     href: node-href(target.id),
-    class: ((
-      "node-link",
-      "target-taxon",
-      "target-taxon-" + target.taxon,
-    ) + extra-classes).join(" "),
-  ))[#if body == none { target.title } else { body }]
+    class: ("node-link", "target-taxon", "target-taxon-" + target.taxon) + extra-classes,
+  )[#if body == none { target.title } else { body }]
 }
-
-// TODO: inline
-#let is-theorem-like(node) = node.taxon in theorem-kinds
 
 #let _render-ref-address(target-node) = node-link(
   target-node,
@@ -75,7 +68,7 @@
     cite-group(group)
   }
   if group.len() == 1 {
-    html.elem("a", attrs: (href: node-href(group.first().key), class: "node-link"), citations)
+    html.a(href: node-href(group.first().key), class: "node-link", citations)
   } else {
     citations
   }
@@ -89,9 +82,8 @@
   let tags = node.tags
 
   let tag-hue(tag) = {
-    let s = if type(tag) == str { tag } else { repr(tag) }
     let hash = 0
-    for c in s.codepoints() {
+    for c in tag.codepoints() {
       hash = calc.rem(hash * 31 + c.to-unicode(), 997)
     }
     ("red", "yellow", "green", "cyan", "blue", "magenta").at(calc.rem(hash, 6))
@@ -101,7 +93,7 @@
     #html.div(class: "node-meta-item node-meta-taxon")[
       #html.dt(class: "node-meta-label")[taxon]
       #html.dd(class: "node-meta-value")[
-        #html.elem("span", attrs: (class: ("node-taxon", "taxon-" + taxon).join(" ")))[#taxon]
+        #html.span(class: ("node-taxon", "taxon-" + taxon))[#taxon]
       ]
     ]
     #html.div(class: "node-meta-item node-meta-address")[
@@ -114,7 +106,7 @@
       html.div(class: "node-meta-item node-meta-tags")[
         #html.dt(class: "node-meta-label")[tags]
         #html.dd(class: "node-meta-value node-tags")[
-          #tags.map(tag => html.elem("span", attrs: (class: ("node-tag", "hue-" + tag-hue(tag)).join(" ")))[#tag]).join()
+          #tags.map(tag => html.span(class: ("node-tag", "hue-" + tag-hue(tag)))[#tag]).join()
         ]
       ]
     }
@@ -136,8 +128,6 @@
 #let render-revision-callout(node, versions) = {
   let is-latest = node.version.is-latest
 
-  let version-tag(version, is-latest) = html.span(class: "revision-version-tag")[#version-label(version, is-latest)]
-
   let body = if versions.len() == 2 {
     if is-latest {
       [This note supersedes an #node-link(versions.first(), body: [earlier version]).]
@@ -145,31 +135,27 @@
       [This note has been superseded by the #node-link(versions.last(), body: [current version]).]
     }
   } else {
-    let item(index, member) = {
-      let version = index + 1
-      let is-self = version == node.version.number
-      let is-latest = member.version.is-latest
-      let item-class = "revision-version-item" + if is-self { " current" } else { "" }
-      html.li(class: item-class)[
+    let item(member) = {
+      let is-self = member.id == node.id
+      html.li(class: ("revision-version-item",) + if is-self { ("current",) } else { () })[
         #html.span(class: "revision-version-body")[#if is-self {
           html.span(class: "revision-version-title")[#member.title]
         } else {
           node-link(member)
-        }
-        #version-tag(version, is-latest)]
+        }#render-version-tag(member.version)]
         #if is-self [#html.span(class: "revision-version-here")[current]]
       ]
     }
     [
       This note has several versions:
       #html.ol(class: "revision-version-list")[
-        #versions.enumerate().map(((index, member)) => item(index, member)).join()
+        #versions.map(item).join()
       ]
     ]
   }
 
   let state-class = if is-latest { "is-latest" } else { "is-superseded" }
-  html.aside(class: "revision-callout " + state-class, role: "note")[#body]
+  html.aside(class: ("revision-callout", state-class), role: "note")[#body]
 }
 
 // Mainmatter
@@ -258,9 +244,6 @@
 
 #let node-title-text(node) = content-to-text(node.title)
 
-#let stylesheet-path = "style.css"
-#let script-path = "main.js"
-
 // Render callbacks
 
 // `group` holds the template nodes of a `link-nodes` group's members, and is
@@ -278,7 +261,7 @@
     } else {
       none
     }
-  } else if body == none and is-theorem-like(target) {
+  } else if body == none and target.taxon in theorem-kinds {
     render-node-ref(target)
   } else {
     node-link(target, body: body)
@@ -336,7 +319,7 @@
           it
         }
       }
-      #show figure: it => html.elem("figure", attrs: (class: "typst"), html.frame(it.body))
+      #show figure: it => html.figure(class: "typst", html.frame(it.body))
       #show raw.where(lang: "agda"): it => render-agda-block(node-page.agda-fences, it)
 
       #body
@@ -372,8 +355,8 @@
       #html.meta(charset: "utf-8")
       #html.meta(name: "viewport", content: "width=device-width, initial-scale=1")
       #html.title(node-title-text(node))
-      #html.link(rel: "stylesheet", href: stylesheet-path)
-      #html.script(type: "module", src: script-path)
+      #html.link(rel: "stylesheet", href: "style.css")
+      #html.script(type: "module", src: "main.js")
     ]
     #html.elem("body", attrs: (
       "data-node-id": id,
@@ -407,7 +390,6 @@
         aria-label: "Transcluded node metadata",
       )
       #html.div(class: "transclusion-body")[
-        #show figure: it => html.elem("figure", attrs: (class: "typst"), html.frame(it.body))
         #show raw.where(lang: "agda"): it => render-agda-block(target-page.agda-fences, it)
 
         #body
