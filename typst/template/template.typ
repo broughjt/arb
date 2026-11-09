@@ -22,8 +22,11 @@
   render-node-ref-group,
 )
 
-// The render callbacks for this site, as named arguments for weibian-core's
-// `render-pages`. The bodyless `site` and the template data computed from it
+#let stylesheet-path = "style.css"
+#let script-path = "main.js"
+
+// The render callbacks for this site, as named arguments for arb-core's
+// `make-renderer`. The bodyless `site` and the template data computed from it
 // (`backmatter` from `collect-backmatter`, `agda` from `agda-context`) reach
 // the callbacks by closure capture, never by being added to `site`. Do not
 // rewrite this with `.with(...)`: a closure's captured values are hashed once,
@@ -62,7 +65,7 @@
     }
   }
 
-  let render-node(id, node, body) = {
+  let render-page(id, node, body) = {
     let node-backmatter = backmatter.at(id)
     let revisions = node-backmatter.revisions
     let has-sections = (
@@ -87,7 +90,7 @@
       sections.insert(kind, entries)
     }
 
-    html.article(class: "node")[
+    let article = html.article(class: "node")[
       // A hidden carrier for the search index's facet/meta values. Placed as a
       // direct child of `article.node` (the pagefind `--root-selector`) and
       // *outside* the excluded regions (`.node-meta` is excluded, so its
@@ -157,9 +160,30 @@
         ]
       }
     ]
+
+    html.html(lang: "en")[
+      // Keep this `html.head` call in sync with Typst's default head generation (pinned rev):
+      //   https://github.com/typst/typst/blob/c93cf32f6f08b6085efafe2217efd746f830663d/crates/typst-html/src/document.rs#L314
+      // and the `<html lang>` attribute set alongside it in `finalize_dom`:
+      //   https://github.com/typst/typst/blob/c93cf32f6f08b6085efafe2217efd746f830663d/crates/typst-html/src/document.rs#L306
+      #html.head[
+        #html.meta(charset: "utf-8")
+        #html.meta(name: "viewport", content: "width=device-width, initial-scale=1")
+        #html.title(node-title-text(node))
+        #html.link(rel: "stylesheet", href: stylesheet-path)
+        #html.script(type: "module", src: script-path)
+      ]
+      #html.elem("body", attrs: (
+        "data-node-id": id,
+      ))[
+        #html.main[
+          #article
+        ]
+      ]
+    ]
   }
 
-  let render-transclusion(target-id, target-node, metadata, render-body) = {
+  let render-transclusion(target-id, target-node, metadata, resolve-body) = {
     let expanded = metadata.at("expanded", default: true)
     let revisions = backmatter.at(target-id).revisions
     let fences = agda-fences(agda, target-id)
@@ -185,43 +209,15 @@
           #show figure: it => html.elem("figure", attrs: (class: "typst"), html.frame(it.body))
           #show raw.where(lang: "agda"): it => render-agda-block(fences, it)
 
-          #render-body()
+          #resolve-body()
         ]
       ]
     ]
   }
 
   (
-    render-node: render-node,
+    render-page: render-page,
     render-link: render-link,
     render-transclusion: render-transclusion,
   )
-}
-
-#let stylesheet-path = "style.css"
-#let script-path = "main.js"
-
-// Wrap a page rendered by `render-pages` in the HTML document skeleton. Its
-// arguments are small, so it stays outside the memoized per-page render.
-#let render-document(node, page) = {
-  html.html(lang: "en")[
-    // Keep this `html.head` call in sync with Typst's default head generation (pinned rev):
-    //   https://github.com/typst/typst/blob/c93cf32f6f08b6085efafe2217efd746f830663d/crates/typst-html/src/document.rs#L314
-    // and the `<html lang>` attribute set alongside it in `finalize_dom`:
-    //   https://github.com/typst/typst/blob/c93cf32f6f08b6085efafe2217efd746f830663d/crates/typst-html/src/document.rs#L306
-    #html.head[
-      #html.meta(charset: "utf-8")
-      #html.meta(name: "viewport", content: "width=device-width, initial-scale=1")
-      #html.title(node-title-text(node))
-      #html.link(rel: "stylesheet", href: stylesheet-path)
-      #html.script(type: "module", src: script-path)
-    ]
-    #html.elem("body", attrs: (
-      "data-node-id": node.id,
-    ))[
-      #html.main[
-        #page
-      ]
-    ]
-  ]
 }

@@ -1,8 +1,8 @@
-#import "@local/arb-core:0.1.0": collect-site, render-pages
+#import "@local/arb-core:0.1.0": collect-site, make-renderer
 #import "backmatter.typ": collect-backmatter
 #import "node.typ": node-href
 #import "agda.typ": agda-context
-#import "template.typ": site-callbacks, render-document
+#import "template.typ": site-callbacks
 
 // The whole site. `sources` is an array of `(path:, content:)`, one per
 // source file, included by the entry file because a package cannot include
@@ -14,12 +14,10 @@
   // Agda token/type annotations (none when the input is absent), consumed by
   // template.typ's raw show rule.
   let agda = agda-context(site, agda-annotations)
-  let callbacks = site-callbacks(site, backmatter, agda, bib)
+  let render = make-renderer(site, bodies, ..site-callbacks(site, backmatter, agda, bib))
 
-  let pages = render-pages(site, bodies, ..callbacks)
-  for (id, page) in pages [
-    #let node = site.nodes.at(id)
-    #document(node-href(id), title: node.title)[#render-document(node, page)]
+  for (id, node) in site.nodes [
+    #document(node-href(id), title: node.title)[#render(id)]
     #label(id)
   ]
 

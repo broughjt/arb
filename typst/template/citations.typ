@@ -97,7 +97,7 @@
 // The per-page "References" bibliography. Native `bibliography` with the default
 // `target: auto` scopes each page's bibliography to the citations in that page's
 // document (including citations pulled in through transclusion). `references` is
-// accepted for signature compatibility / the emit gate in `render-node`; the
+// accepted for signature compatibility / the emit gate in `render-page`; the
 // native bibliography detects its own entries.
 #let render-references(references, bib) = {
   html.section(class: "backmatter-section")[

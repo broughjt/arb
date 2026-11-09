@@ -195,13 +195,18 @@
 
 // Rendering
 //
-// The `render-pages` function renders one page per node, returning a
-// dictionary from id to the rendered content (in sorted id order). User
-// templates supply three callbacks:
+// We use the following terms. A node *body* is its source content before
+// rendering. A *resolved body* is the body with links and transclusions
+// rendered by the corresponding template callbacks. A *page* is the entire
+// rendered HTML page for a node.
 //
-// - `render-node(id, node, body)`
+// The `make-renderer` function returns a function that takes a node id and
+// produces the page for that node. User templates supply three callbacks:
+//
+// - `render-page(id, node, body)`, with `body` already resolved
 // - `render-link(target-id, target-node, body, metadata)`
-// - `render-transclusion(target-id, target-node, metadata, render-body)`
+// - `render-transclusion(target-id, target-node, metadata, resolve-body)`,
+//   where `resolve-body()` returns the target's resolved body
 //
 // Caching rules
 //
@@ -240,27 +245,27 @@
   closures
 }
 
-#let render-pages(
+#let make-renderer(
   site,
   bodies,
-  render-node: none,
+  render-page: none,
   render-link: none,
   render-transclusion: none,
 ) = {
   for (name, callback) in (
-    render-node: render-node,
+    render-page: render-page,
     render-link: render-link,
     render-transclusion: render-transclusion,
   ) {
     if callback == none {
-      panic("render-pages requires " + name)
+      panic("make-renderer requires " + name)
     }
   }
 
-  let render-page(id, page-bodies) = {
+  let page(id, page-bodies) = {
     // Created once per page, capturing `site` and `page-bodies`, so that they
     // are hashed once per page rather than at every transclusion.
-    let render-content(body, stack) = [
+    let resolve-body(body, stack) = [
       #show metadata: it => {
         let marker = _marker-value(it)
 
@@ -286,8 +291,8 @@
           if target-node == none {
             panic("unknown node: " + target-id)
           }
-          let render-body = () => render-content(page-bodies.at(target-id), stack + (target-id,))
-          render-transclusion(target-id, target-node, marker.metadata, render-body)
+          let resolve-target = () => resolve-body(page-bodies.at(target-id), stack + (target-id,))
+          render-transclusion(target-id, target-node, marker.metadata, resolve-target)
         } else {
           none
         }
@@ -296,23 +301,19 @@
       #body
     ]
 
-    render-node(id, site.nodes.at(id), render-content(page-bodies.at(id), (id,)))
+    render-page(id, site.nodes.at(id), resolve-body(page-bodies.at(id), (id,)))
   }
 
-  let closures = _transclusion-closures(site.transclusions)
-  let pages = (:)
-  for id in site.nodes.keys() {
-    // A plain loop rather than `.map(reached => ...)`, since that closure would
-    // capture `bodies` and hash all of it once per page.
+  let bodies-by-page = (:)
+  for (id, reachable) in _transclusion-closures(site.transclusions) {
     let page-bodies = (:)
-    for reachable-id in closures.at(id) {
+    for reachable-id in reachable {
       page-bodies.insert(reachable-id, bodies.at(reachable-id))
     }
-
-    pages.insert(id, render-page(id, page-bodies))
+    bodies-by-page.insert(id, page-bodies)
   }
 
-  pages
+  id => page(id, bodies-by-page.at(id))
 }
 
 // Public authoring API
