@@ -64,7 +64,7 @@
     .enumerate()
     .map(((index, item)) => link-node(
       item.key,
-      citation: true,
+      kind: "citation",
       group: items,
       group-index: index,
     ))

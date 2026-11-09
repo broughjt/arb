@@ -46,6 +46,7 @@
     .enumerate()
     .map(((index, id)) => link-node(
       id,
+      kind: "group",
       group: ids,
       group-index: index,
     ))

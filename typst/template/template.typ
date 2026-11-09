@@ -27,38 +27,23 @@
   extra-classes: ("node-ref",),
 )
 
-// Render Oxford commas, e.g. "A, B, and C".
-#let _join-and(items) = {
-  let n = items.len()
-  if n == 1 {
-    items.first()
-  } else if n == 2 {
-    items.at(0) + [ and ] + items.at(1)
+// One member of a `link-nodes` group, which renders as "Lemmas 0079 and 008j"
+// across its members' markers: the first carries the plural kind word, and each
+// later one its separator.
+#let render-node-ref-group-member(target, index, count) = {
+  if count == 1 {
+    render-node-ref(target)
   } else {
-    items.slice(0, n - 1).join([, ]) + [, and ] + items.last()
-  }
-}
-
-#let render-node-ref-group(nodes) = {
-  let ids = nodes.map(node => node.id)
-  let taxa = nodes.map(node => node.taxon)
-
-  for (id, taxon) in ids.zip(taxa) {
-    if taxon not in theorem-kinds {
-      panic(
-        "link-nodes target " + id + " has taxon `" + taxon
-          + "`; only lemma/theorem/corollary may be grouped",
-      )
+    let address = _render-ref-address(target)
+    if index == 0 {
+      [#html.span(class: "node-ref-kind")[#theorem-kinds.at(target.taxon).plural] #address]
+    } else if count == 2 {
+      [ and #address]
+    } else if index == count - 1 {
+      [, and #address]
+    } else {
+      [, #address]
     }
-  }
-
-  if nodes.len() == 1 {
-    render-node-ref(nodes.first())
-  } else if taxa.dedup().len() == 1 {
-    let kind = theorem-kinds.at(taxa.first()).plural
-    [#html.span(class: "node-ref-kind")[#kind] #_join-and(nodes.map(_render-ref-address))]
-  } else {
-    panic("link-nodes mixed taxa not yet supported: " + taxa.join(", "))
   }
 }
 
@@ -246,21 +231,14 @@
 
 // Render callbacks
 
-// `group` holds the template nodes of a `link-nodes` group's members, and is
-// empty otherwise.
-#let render-link(target, body, metadata, group) = {
-  if metadata.at("citation", default: false) {
+#let render-link(target, body, metadata) = {
+  let kind = metadata.at("kind", default: "node")
+  if kind == "citation" {
     if metadata.group-index == 0 {
       render-citation(metadata.group)
-    } else {
-      none
     }
-  } else if "group" in metadata {
-    if metadata.group-index == 0 {
-      render-node-ref-group(group)
-    } else {
-      none
-    }
+  } else if kind == "group" {
+    render-node-ref-group-member(target, metadata.group-index, metadata.group.len())
   } else if body == none and target.taxon in theorem-kinds {
     render-node-ref(target)
   } else {

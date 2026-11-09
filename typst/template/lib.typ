@@ -18,14 +18,7 @@
     bodies,
     render-page: (id, _, body) => render-page(node-pages.at(id), body, bib),
     render-link: (target-id, _, body, metadata) => {
-      // TODO: This group code looks like it should go somewhere else
-      let group = ()
-      if "group" in metadata and not metadata.at("citation", default: false) {
-        for id in metadata.group {
-          group.push(node-pages.at(id).node)
-        }
-      }
-      render-link(node-pages.at(target-id).node, body, metadata, group)
+      render-link(node-pages.at(target-id).node, body, metadata)
     },
     render-transclusion: (target-id, _, metadata, resolve-body) => {
       render-transclusion(node-pages.at(target-id), metadata, resolve-body())

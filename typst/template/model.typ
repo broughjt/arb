@@ -152,6 +152,32 @@
   backmatter
 }
 
+// Every node linked in a `link-nodes` group must share the same theorem-like taxon.
+#let _check-link-groups(site, nodes) = {
+  for (id, links) in site.link-metadata {
+    for link in links {
+      let metadata = link.metadata
+      if metadata.at("kind", default: none) != "group" or metadata.group-index != 0 {
+        continue
+      }
+      let taxa = ()
+      for member in metadata.group {
+        let taxon = nodes.at(member).taxon
+        if taxon not in theorem-kinds {
+          panic(
+            "link-nodes target " + member + " has taxon `" + taxon
+              + "`; only lemma/theorem/corollary may be grouped",
+          )
+        }
+        taxa.push(taxon)
+      }
+      if taxa.dedup().len() > 1 {
+        panic("link-nodes mixed taxa not yet supported: " + taxa.join(", "))
+      }
+    }
+  }
+}
+
 // A *template node* is the structured representation of a node in this
 // template. We use arb-core's node metadata support to keep track of a taxon,
 // tags, and versioning for each node. We store versions as `(number,
@@ -197,6 +223,7 @@
     result
   }
 
+  _check-link-groups(site, nodes)
   let backmatter = _collect-backmatter(site, nodes)
 
   let pages = (:)
