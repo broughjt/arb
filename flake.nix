@@ -62,6 +62,11 @@
             })
             [
               {
+                name = "citegeist";
+                version = "0.3.1";
+                hash = "sha256-MBiAHNLDRvt8WSsYFv9f7LCyqJCSCEenGDMP48J1vPg=";
+              }
+              {
                 name = "fletcher";
                 version = "0.5.8";
                 hash = "sha256-kiqiNzFU4imhPnwzwV1bGgGfS3mZOo96JsKboA5yjtU=";
@@ -85,7 +90,7 @@
         # Note: expects the dev shell's Typst package paths.
         arb-build = pkgs.writeShellApplication {
           name = "arb-build";
-          runtimeInputs = with pkgs; [ jq pandoc typst ];
+          runtimeInputs = with pkgs; [ jq typst ];
           text = ''
             styles=${./typst/template/assets/styles}
           '' + builtins.readFile ./build.sh;

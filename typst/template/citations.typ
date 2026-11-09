@@ -1,4 +1,6 @@
+#import "@local/arb-core:0.1.0": node
 #import "@local/notes:0.1.0": locator-abbreviations
+#import "@preview/citegeist:0.3.1": load-bibliography
 
 #let citation-style-xml = read("chicago-author-date.csl")
 
@@ -43,3 +45,22 @@
   style: bytes(citation-style-xml),
   title: none,
 )
+
+// Instead of source files with nodes for each reference, we inject them
+// synthetically here from entries in the bibliography.
+#let reference-sources(bib) = {
+  let sources = ()
+  for (key, entry) in load-bibliography(read(bib)) {
+    sources.push((
+      path: "references.bib",
+      content: node(
+        key,
+        entry.fields.at("shorttitle", default: entry.fields.title),
+        [],
+        taxon: "reference",
+        tags: (entry.entry_type,),
+      ),
+    ))
+  }
+  sources
+}

@@ -30,14 +30,11 @@ jq -r '.sources[]' weibian.json | while read -r glob; do
   printf '%s\n' $glob
 done | sort -u > "$scratch/sources.txt"
 
-pandoc references/references.bib --to csljson --output "$scratch/references-meta.json"
-
 typst compile \
   --root . \
   --features bundle,html \
   --format bundle \
   --input sources=/$scratch/sources.txt \
-  --input references-meta=/$scratch/references-meta.json \
   site.typ "$scratch/staging"
 
 # The partials in order, separated by blank lines, as the old wrapper joined

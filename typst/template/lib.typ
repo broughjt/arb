@@ -1,11 +1,13 @@
 #import "@local/arb-core:0.1.0": collect-site, make-renderer
 #import "model.typ": collect-node-pages, node-href
 #import "agda.typ": agda-context
+#import "citations.typ": reference-sources
 #import "template.typ": render-link, render-page, render-transclusion
 
 // `sources` is an array of `(path:, content:)` dictionaries.
 #let site(sources, bib: none, agda-annotations: none) = {
-  let (site, bodies) = collect-site(sources)
+  let references = if bib != none { reference-sources(bib) } else { () }
+  let (site, bodies) = collect-site(sources + references)
 
   let agda = agda-context(site, agda-annotations)
   let node-pages = collect-node-pages(site, agda)
