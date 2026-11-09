@@ -81,8 +81,18 @@
                 hash = "sha256-Cl6Y34d3fi6aB07HIk4zsyy0ucHgWCId0yMVxE4DnWw=";
               }
             ]);
+
+        # Emits token and type annotations for the literate Agda modules. It
+        # links against nixpkgs' haskellPackages.Agda, the library behind
+        # nixpkgs' agda, so the two cannot disagree about the corpus.
+        agda-annotate = pkgs.haskell.lib.justStaticExecutables
+          (pkgs.haskellPackages.callCabal2nix "agda-annotate" ./agda-annotate { });
       in
       {
+        packages = {
+          inherit agda-annotate;
+        };
+
         devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
             racket

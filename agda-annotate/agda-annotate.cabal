@@ -1,0 +1,21 @@
+cabal-version:      2.4
+name:               agda-annotate
+version:            0.1.0
+synopsis:           Emit token and type annotations for literate Agda modules
+build-type:         Simple
+
+executable agda-annotate
+  main-is:          Main.hs
+  hs-source-dirs:   app
+  default-language: Haskell2010
+  ghc-options:      -Wall
+  build-depends:
+      base
+    , Agda
+    , aeson
+    , bytestring
+    , containers
+    , directory
+    , filepath
+    , mtl
+    , text
