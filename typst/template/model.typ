@@ -13,9 +13,6 @@
   "theorem",
 )
 
-// The theorem-like kinds and their words, used in theorem headings and in
-// body-less references to theorem-like nodes ("Lemma 0079", "Lemmas 0079 and
-// 008j").
 #let theorem-kinds = (
   "lemma": (singular: "Lemma", plural: "Lemmas"),
   "theorem": (singular: "Theorem", plural: "Theorems"),

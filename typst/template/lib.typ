@@ -13,12 +13,12 @@
   // The callbacks look up node pages and pass the render functions only what
   // they read. They are closures, not `.with` partial applications, so that
   // the captured `node-pages` is hashed once rather than on every call.
-  // arb-core's own node records are ignored (`_`) in favor of template nodes.
   let render = make-renderer(
     site,
     bodies,
     render-page: (id, _, body) => render-page(node-pages.at(id), body, bib),
     render-link: (target-id, _, body, metadata) => {
+      // TODO: This group code looks like it should go somewhere else
       let group = ()
       if "group" in metadata and not metadata.at("citation", default: false) {
         for id in metadata.group {

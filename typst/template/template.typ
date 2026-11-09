@@ -4,7 +4,7 @@
 
 // Links
 
-// `target` is a template node.
+// `target` is a template node
 #let node-link(target, body: none, extra-classes: ()) = {
   html.elem("a", attrs: (
     href: node-href(target.id),
@@ -16,24 +16,15 @@
   ))[#if body == none { target.title } else { body }]
 }
 
-// Formal-result references: how body-less `link-node` and `link-nodes` markers
-// to theorem-like nodes (lemma/theorem/corollary) render. A lone reference
-// renders as "Lemma 0079" (one link); a `link-nodes` group renders as
-// "Lemmas 0079 and 008j", sharing one pluralized kind word with each address its
-// own link. `template.typ`'s `render-link` routes here.
-
-// Whether a node is a formal result that body-less references render specially.
+// TODO: inline
 #let is-theorem-like(node) = node.taxon in theorem-kinds
 
-// One linked, monospace formal-result address: `<a class="node-link node-ref">0079</a>`.
 #let _render-ref-address(target-node) = node-link(
   target-node,
   body: html.span(class: "node-ref-address")[#target-node.id],
   extra-classes: ("node-ref",),
 )
 
-// A singular formal-result reference, "Lemma 0079" as a single link (kind word
-// and address both clickable).
 #let render-node-ref(target-node) = node-link(
   target-node,
   body: [
@@ -43,8 +34,7 @@
   extra-classes: ("node-ref",),
 )
 
-// Join rendered items with prose "and"/Oxford commas: "A", "A and B",
-// "A, B, and C".
+// Render Oxford commas, e.g. "A, B, and C".
 #let _join-and(items) = {
   let n = items.len()
   if n == 1 {
@@ -56,11 +46,6 @@
   }
 }
 
-// A `link-nodes(...)` group: several theorem-like references sharing one
-// pluralized kind word, e.g. "Lemmas 0079 and 008j". The shared word is prose;
-// each address is its own link. A one-id group renders as the singular form.
-// Mixed taxa are not yet supported (MVP panic). `nodes` are the group.s
-// template nodes, in order.
 #let render-node-ref-group(nodes) = {
   let ids = nodes.map(node => node.id)
   let taxa = nodes.map(node => node.taxon)
@@ -84,12 +69,6 @@
   }
 }
 
-// A citation group. A lone citation links to its reference node's page, as an
-// `a.node-link` (not a bare `link(...)`) so it picks up the link color and
-// hover wash from 06-links.css, matching other node links; a multi-item
-// cluster renders as plain text (graph edges to each reference still exist).
-// The `show link` rule flattens Typst's own link from a citation to the
-// bibliography, so there is no nested <a>.
 #let render-citation(group) = {
   let citations = {
     show link: inner => inner.body
@@ -104,14 +83,11 @@
 
 // Node header
 
-// `node` is a template node.
+// `node` is a template node
 #let render-node-meta(node, class: "node-meta", aria-label: "Node metadata") = {
   let taxon = node.taxon
   let tags = node.tags
 
-  // Deterministic hue for a tag chip (Round F3): a small polynomial hash of the
-  // tag text picks one of the six Modus chip hues, so the same tag gets the same
-  // pastel on every page and every build. Emitted as a `hue-*` class on `.node-tag`.
   let tag-hue(tag) = {
     let s = if type(tag) == str { tag } else { repr(tag) }
     let hash = 0
@@ -145,16 +121,10 @@
   ]
 }
 
-// The "(version n; latest)" label text, shared so the title badge, the in-body
-// callout, and backmatter links never drift in wording.
 #let version-label(version, is-latest) = (
   "(version " + str(version) + if is-latest { "; latest" } else { "" } + ")"
 )
 
-// The version postfix span appended after a node's title wherever it is linked,
-// so a versioned note is always legible as such. `version` is a template node's
-// `version`, and nothing renders for `none`. The caller picks the span class
-// for its visual context.
 #let render-version-tag(version, class: "revision-version-tag") = {
   if version != none {
     [ #html.span(class: class)[#version-label(version.number, version.is-latest)]]
@@ -163,12 +133,6 @@
 
 // Versions callout
 
-// In-body revision callout: the prominent display of a note's versions, shown
-// at the top of every version. Two versions render as
-// directional prose; three or more as a list (one row per version, the viewed
-// one flagged "current", the newest tagged "latest"). The `is-latest` /
-// `is-superseded` class drives the state styling (info vs caution). `node` is
-// the template node of the page, and `versions` is its node page's `versions`.
 #let render-revision-callout(node, versions) = {
   let is-latest = node.version.is-latest
 
@@ -210,12 +174,6 @@
 
 // Mainmatter
 
-// Rendering of the prelude's theorem frames and proofs, which reach the
-// template as `metadata` (see the prelude's theorems.typ).
-
-// A theorem frame: a heading with the kind word and an optional parenthetical
-// note, `(name; citation)`. The parentheses and the "; " are CSS-generated
-// (09-theorems.css).
 #let render-theorem(theorem) = {
   let note-parts = ()
   if theorem.name != none {
@@ -262,7 +220,6 @@
   }
 }
 
-// The per-page "References" section.
 #let render-references(bib) = {
   html.section(class: "backmatter-section")[
     #html.h3(class: "backmatter-section-title")[References]
@@ -274,9 +231,6 @@
 
 // TODO: Remove if there is ever anything in Typst standard library content that
 // does this better.
-
-// Flatten title content to a plain string. Needed for contexts that require
-// character data and reject child elements, e.g. the `<title>` raw-text element.
 #let content-to-text(value) = {
   if value == none {
     ""
@@ -307,12 +261,10 @@
 #let stylesheet-path = "style.css"
 #let script-path = "main.js"
 
-// The render functions for arb-core's `make-renderer`, which lib.typ calls
-// from its callbacks. They take template nodes and node pages, never the whole
-// map of node pages (see arb-core's caching rules).
+// Render callbacks
 
-// A link to `target`, a template node. `group` holds the template nodes of a
-// `link-nodes` group's members, and is empty otherwise.
+// `group` holds the template nodes of a `link-nodes` group's members, and is
+// empty otherwise.
 #let render-link(target, body, metadata, group) = {
   if metadata.at("citation", default: false) {
     if metadata.group-index == 0 {
@@ -342,15 +294,16 @@
   )
 
   let article = html.article(class: "node")[
+    // TODO: Update this comment
     // A hidden carrier for the search index's facet/meta values. Placed as a
     // direct child of `article.node` (the pagefind `--root-selector`) and
     // *outside* the excluded regions (`.node-meta` is excluded, so its
     // taxon/id/tag text never reaches the index) so pagefind still reads these
     // attributes. taxon and each tag become `data-pagefind-filter` values
     // (accumulated per key -> `filters.taxon` / `filters.tag`); the id rides as
-    // `data-pagefind-meta` (title is auto-captured from the `<h1>`). The element
-    // carries no text, so it adds nothing to the indexed content, and `hidden`
-    // keeps it out of the rendered page and the a11y tree. See
+    // `data-pagefind-meta` (title is auto-captured from the `<h1>`). The
+    // element carries no text, so it adds nothing to the indexed content, and
+    // `hidden` keeps it out of the rendered page and the a11y tree. See
     // .scratch/search-design.md -> "Facets".
     #html.elem("div", attrs: (
       "class": "pagefind-attrs",
@@ -409,6 +362,8 @@
   ]
 
   html.html(lang: "en")[
+    // TODO: Explain why we aren't just Typst's default head generation.
+    //
     // Keep this `html.head` call in sync with Typst's default head generation (pinned rev):
     //   https://github.com/typst/typst/blob/c93cf32f6f08b6085efafe2217efd746f830663d/crates/typst-html/src/document.rs#L314
     // and the `<html lang>` attribute set alongside it in `finalize_dom`:
@@ -441,6 +396,7 @@
   )
 
   // TODO: Handle heading offsets
+  // TODO: Is this still relevant?
 
   html.section(class: "transclusion block")[
     #html.details(open: expanded, class: "transclusion-details")[
