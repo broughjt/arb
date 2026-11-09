@@ -40,7 +40,7 @@
       } else {
         none
       }
-    } else if metadata.at("ref-group", default: false) {
+    } else if "group" in metadata {
       if metadata.group-index == 0 {
         let nodes = ()
         for group-id in metadata.group {

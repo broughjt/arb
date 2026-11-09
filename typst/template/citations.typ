@@ -23,8 +23,8 @@
   bare
 }
 
-#import "@local/notes:0.1.0": at
-
+// The abbreviation of each locator label in the prelude's `locator-labels`,
+// or `none` to print the locator bare.
 #let _locator-labels = (
   page: none,
   theorem: "thm.",
@@ -43,26 +43,10 @@
   table: "table",
 )
 
-// `library/locators.typ` (the `at` namespace) holds one constructor per locator
-// label. Its members can't be generated from `_locator-labels`, so guard against
-// the two drifting apart: every label here must have a constructor and vice versa.
-#{
-  let constructors = dictionary(at).keys().sorted()
-  let labels = _locator-labels.keys().sorted()
-  if constructors != labels {
-    panic(
-      "locators.typ (`at`) is out of sync with _locator-labels: "
-        + "constructors=" + repr(constructors) + " labels=" + repr(labels),
-    )
-  }
-}
-
 // Build a native `cite` supplement (page/locator) from our locator policy.
 #let _supplement(locator, locator-label) = {
   if locator == none {
     none
-  } else if locator-label == none {
-    locator
   } else {
     if locator-label not in _locator-labels {
       panic(

@@ -1,7 +1,7 @@
-// Small native-math/theorem helper layer for notes.
+// TODO: It seems like we should have a small package for lemma/theorem/corollary environments that emits a semantic represenation (a figure or something), and then those are rendered in the template package. Then we should move the type theory stuff either into a separate file in this package or we should move it into the notes repository because one could make an argument that it's really closer to note material than template code (it changes as while I learn more the Rijke type theory book).
 
 #import "@preview/fletcher:0.5.8" as fletcher
-#import "citations.typ": cite-nodes, normalize-citation-item
+#import "citations.typ": cite-nodes
 
 #let diagram = fletcher.diagram
 #let edge = fletcher.edge
@@ -113,13 +113,16 @@
   ]
 }
 
+// TODO: Yikes, is there a way to use the public API for citations instead of
+// calling into the guts like this? This feels ugly
+
 // Normalize a frame `citation:` argument -- a key string, a citation dict, or an
 // array of either -- into bare-form citation items. Bareness is forced here: the
 // theorem head supplies its own parentheses, so the citations must not bring
 // Chicago's.
 #let citation-items(citation) = {
   let items = if type(citation) == array { citation } else { (citation,) }
-  items.map(item => normalize-citation-item(item) + (form: "bare"))
+  items.map(item => (if type(item) == str { (key: item) } else { item }) + (form: "bare"))
 }
 
 #let make-frame(identifier, kind) = {

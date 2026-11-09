@@ -1,10 +1,23 @@
 #import "@local/arb-core:0.1.0": link-node
 
-// Normalize one citation item -- a reference key string, or a `(key: ..)` dict
-// optionally carrying `form` / `locator` / `locator-label` -- into the canonical
-// item dict the rest of the citation code consumes. Shared by `cite-nodes`
-// (prose) and `library/math.typ`'s theorem-head `citation-items`, so the two
-// surfaces cannot drift in how a citation spec is read.
+#let locator-labels = (
+  "page",
+  "theorem",
+  "proposition",
+  "lemma",
+  "corollary",
+  "definition",
+  "example",
+  "remark",
+  "exercise",
+  "appendix",
+  "chapter",
+  "section",
+  "equation",
+  "figure",
+  "table",
+)
+
 #let normalize-citation-item(argument) = {
   let item = if type(argument) == str {
     (key: argument)
@@ -14,19 +27,32 @@
     panic("citation items must be reference keys or dictionaries with a `key`")
   }
 
+  let labels = ()
+  for field in item.keys() {
+    if field in ("key", "form") {
+      continue
+    }
+    if field not in locator-labels {
+      panic(
+        "unknown citation field `" + field + "`; the locators are "
+          + locator-labels.join(", "),
+      )
+    }
+    labels.push(field)
+  }
+  if labels.len() > 1 {
+    panic("a citation takes at most one locator, not " + labels.join(" and "))
+  }
+  let label = labels.at(0, default: none)
+
   (
     key: item.key,
     form: item.at("form", default: none),
-    locator: item.at("locator", default: none),
-    locator-label: item.at("locator-label", default: "page"),
+    locator: if label == none { none } else { item.at(label) },
+    locator-label: label,
   )
 }
 
-// Authoring API ---------------------------------------------------------------
-
-// A citation cluster. Emits one Weibian link marker per cited key (so each
-// reference gets a graph edge / backlink) carrying the ordered group so that
-// `render-citation` can render the whole cluster natively at the first marker.
 #let cite-nodes(..arguments) = {
   if arguments.named().len() > 0 {
     panic("cite-nodes accepts only positional citation items")
@@ -45,40 +71,26 @@
     .join()
 }
 
-// A single citation. One-item wrapper over `cite-nodes`.
-//
-// The locator-spec is the optional second positional argument: a plain string
-// (a bare page locator), or a dict from the `at` namespace
-// (`at.definition("1.1.9")`), or omitted. This is unambiguous because clusters
-// live on `cite-nodes` and a single citation has no body, so nothing else
-// competes for the slot. The `form` is filled in by the `cite-node-<form>`
-// family below.
+// Takes an optional position argument for the page, otherwise locators are
+// specified with a keyword argument.
 #let cite-node-with(id, ..rest, form: none) = {
-  if rest.named().len() > 0 {
-    panic("cite-node accepts only an id and an optional locator-spec positionally")
-  }
   let positional = rest.pos()
   if positional.len() > 1 {
-    panic("cite-node accepts at most one locator-spec after the id")
+    panic("cite-node accepts at most one page after the id")
   }
 
-  let spec = positional.at(0, default: none)
-  let loc = if spec == none {
-    (:)
-  } else if type(spec) == str {
-    (locator: spec, locator-label: "page")
-  } else {
-    spec
+  let item = (key: id, form: form, ..rest.named())
+  if positional.len() == 1 {
+    if "page" in item {
+      panic("cite-node accepts a page positionally or as `page:`, not both")
+    }
+    item.insert("page", positional.first())
   }
 
-  cite-nodes((key: id, form: form, ..loc))
+  cite-nodes(item)
 }
 
-// The form family. The abbreviation is the canonical name with the form word
-// truncated to its first letter; the hyphen keeps it clear of the plural
-// `cite-nodes`. `form` values are Typst's native `CitationForm` (normal / prose
-// / author / year / full); `bare` is repo-local (normal with paren-stripped CSL).
-#let cite-node = cite-node-with                          // normal / parenthetical
+#let cite-node = cite-node-with
 #let cite-node-prose = cite-node-with.with(form: "prose")
 #let cite-node-author = cite-node-with.with(form: "author")
 #let cite-node-bare = cite-node-with.with(form: "bare")
