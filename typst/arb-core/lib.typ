@@ -114,6 +114,26 @@
   graph
 }
 
+// For each node, the sorted ids of every node it transcludes reflexive-
+// transitively.
+#let _transclusion-closures(transclusions) = {
+  let closures = (:)
+  for id in transclusions.keys() {
+    let reachable = (:)
+    let pending = (id,)
+    while pending.len() > 0 {
+      let current = pending.pop()
+      if current in reachable or current not in transclusions {
+        continue
+      }
+      reachable.insert(current, true)
+      pending += transclusions.at(current).keys()
+    }
+    closures.insert(id, reachable.keys().sorted())
+  }
+  closures
+}
+
 // Return `(site, bodies)`. `site` consists of:
 //
 // - `nodes`: a map from id to (id, title, metadata, path)
@@ -123,6 +143,8 @@
 // - `link-metadata`/`transclusion-metadata`: map from id to ordered list of
 //   (target, metadata) pairs. We do this because there might be several
 //   links/transclusions with the same target but potentially different metadata.
+// - `transclusion-closures`: map from id to the sorted ids of every node it
+//   transcludes reflexive-transitively
 // 
 // `bodies` maps from id to node body.
 //
@@ -181,13 +203,16 @@
     transclusion-metadata.insert(id, transclusions.at(id))
   }
 
+  let transclusion-graph = _build-edge-graph(transclusion-metadata)
+
   (
     site: (
       nodes: sorted-nodes,
       links: _build-edge-graph(link-metadata),
-      transclusions: _build-edge-graph(transclusion-metadata),
+      transclusions: transclusion-graph,
       link-metadata: link-metadata,
       transclusion-metadata: transclusion-metadata,
+      transclusion-closures: _transclusion-closures(transclusion-graph),
     ),
     bodies: sorted-bodies,
   )
@@ -224,26 +249,6 @@
 // - not pass `site` or another large dictionary as an argument to a function
 //   called once per page (or link or transclusion), since each call hashes the
 //   whole dictionary.
-
-// For each node, the sorted ids of every node it transcludes reflexive-
-// transitively.
-#let _transclusion-closures(transclusions) = {
-  let closures = (:)
-  for id in transclusions.keys() {
-    let reachable = (:)
-    let pending = (id,)
-    while pending.len() > 0 {
-      let current = pending.pop()
-      if current in reachable or current not in transclusions {
-        continue
-      }
-      reachable.insert(current, true)
-      pending += transclusions.at(current).keys()
-    }
-    closures.insert(id, reachable.keys().sorted())
-  }
-  closures
-}
 
 #let make-renderer(
   site,
@@ -305,7 +310,7 @@
   }
 
   let bodies-by-page = (:)
-  for (id, reachable) in _transclusion-closures(site.transclusions) {
+  for (id, reachable) in site.transclusion-closures {
     let page-bodies = (:)
     for reachable-id in reachable {
       page-bodies.insert(reachable-id, bodies.at(reachable-id))
