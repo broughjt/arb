@@ -1,4 +1,4 @@
-#import "node.typ": node-href
+#import "model.typ": node-href
 
 // Citation rendering uses Typst's native `cite`/`bibliography` (hayagriva is
 // compiled into Typst), not an external plugin. The authoring helpers below

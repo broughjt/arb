@@ -31,8 +31,7 @@
 // Annotation offsets are 1-based character offsets into the literate source
 // file, matching the anchors Agda's own HTML backend emits.
 
-#import "model.typ": node-taxon
-#import "node.typ": node-href
+#import "model.typ": node-href, node-taxon
 
 // The anchor id / URL fragment for a definition site. Module-prefixed because
 // one page can carry fences from several modules (via transclusion), and

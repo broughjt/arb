@@ -1,6 +1,5 @@
 #import "@local/arb-core:0.1.0": collect-site, make-renderer
-#import "model.typ": collect-node-pages
-#import "node.typ": node-href
+#import "model.typ": collect-node-pages, node-href
 #import "agda.typ": agda-context
 #import "template.typ": site-callbacks
 

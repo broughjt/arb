@@ -13,6 +13,17 @@
   "theorem",
 )
 
+// The theorem-like kinds and their words, used in theorem headings and in
+// body-less references to theorem-like nodes ("Lemma 0079", "Lemmas 0079 and
+// 008j").
+#let theorem-kinds = (
+  "lemma": (singular: "Lemma", plural: "Lemmas"),
+  "theorem": (singular: "Theorem", plural: "Theorems"),
+  "corollary": (singular: "Corollary", plural: "Corollaries"),
+)
+
+#let node-href(id) = id + ".html"
+
 #let node-taxon(node) = {
   let taxon = node.metadata.at("taxon", default: "note")
   let label = "taxon for node " + node.id
