@@ -8,6 +8,7 @@
 )
 
 #import "citations.typ": (
+  locator-abbreviations,
   cite-node,
   cite-nodes,
   cite-node-with,

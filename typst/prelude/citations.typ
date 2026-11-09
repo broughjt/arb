@@ -1,21 +1,21 @@
 #import "@local/arb-core:0.1.0": link-node
 
-#let locator-labels = (
-  "page",
-  "theorem",
-  "proposition",
-  "lemma",
-  "corollary",
-  "definition",
-  "example",
-  "remark",
-  "exercise",
-  "appendix",
-  "chapter",
-  "section",
-  "equation",
-  "figure",
-  "table",
+#let locator-abbreviations = (
+  page: none,
+  theorem: "thm.",
+  proposition: "prop.",
+  lemma: "lem.",
+  corollary: "cor.",
+  definition: "def.",
+  example: "ex.",
+  remark: "rem.",
+  exercise: "exer.",
+  appendix: "appx.",
+  chapter: "ch.",
+  section: "§",
+  equation: "eq.",
+  figure: "fig.",
+  table: "table",
 )
 
 #let normalize-citation-item(argument) = {
@@ -32,10 +32,10 @@
     if field in ("key", "form") {
       continue
     }
-    if field not in locator-labels {
+    if field not in locator-abbreviations {
       panic(
         "unknown citation field `" + field + "`; the locators are "
-          + locator-labels.join(", "),
+          + locator-abbreviations.keys().join(", "),
       )
     }
     labels.push(field)

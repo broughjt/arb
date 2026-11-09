@@ -1,3 +1,5 @@
+#import "@local/notes:0.1.0": locator-abbreviations
+
 #let citation-style-xml = read("chicago-author-date.csl")
 
 // Hack: we want to avoid rendering extra parentheses in contexts like "Theorem
@@ -11,36 +13,17 @@
   bare
 }
 
-#let _locator-labels = (
-  page: none,
-  theorem: "thm.",
-  proposition: "prop.",
-  lemma: "lem.",
-  corollary: "cor.",
-  definition: "def.",
-  example: "ex.",
-  remark: "rem.",
-  exercise: "exer.",
-  appendix: "appx.",
-  chapter: "ch.",
-  section: "§",
-  equation: "eq.",
-  figure: "fig.",
-  table: "table",
-)
-
 #let _supplement(locator, locator-label) = {
   if locator == none {
-    none
+    return none
+  }
+  let abbreviation = locator-abbreviations.at(locator-label)
+  if abbreviation == none {
+    locator
+  } else if abbreviation == "§" {
+    [§#locator]
   } else {
-    if locator-label not in _locator-labels {
-      panic(
-        "unknown locator-label `" + locator-label + "`; known labels: "
-          + _locator-labels.keys().join(", "),
-      )
-    }
-    let label = _locator-labels.at(locator-label)
-    if label == none { locator } else if label == "§" { [#label#locator] } else { [#label #locator] }
+    [#abbreviation #locator]
   }
 }
 
