@@ -31,7 +31,8 @@
 // Annotation offsets are 1-based character offsets into the literate source
 // file, matching the anchors Agda's own HTML backend emits.
 
-#import "node.typ": node-href, node-taxon
+#import "model.typ": node-taxon
+#import "node.typ": node-href
 
 // The anchor id / URL fragment for a definition site. Module-prefixed because
 // one page can carry fences from several modules (via transclusion), and
@@ -180,18 +181,8 @@
   (node-modules: node-modules, fences: fences)
 }
 
-// The fence table for the module containing node `node-id`, or `none` when
-// there is no Agda context or the node is not in an Agda module. Call it once
-// per page, not per fence: each call hashes the whole context.
-#let agda-fences(agda, node-id) = {
-  if agda == none { return none }
-  let module = agda.node-modules.at(node-id, default: none)
-  if module == none { return none }
-  agda.fences.at(module)
-}
-
 // The `show raw.where(lang: "agda")` body. template.typ installs it with the
-// fence table of the enclosing node's module (`agda-fences`), not the whole
+// fence table of the enclosing node's module (a node page's `agda-fences`), not the whole
 // context, which would be re-hashed at every fence. Pure lookup: the content
 // was rendered at context construction.
 #let render-agda-block(fences, it) = {

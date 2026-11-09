@@ -69,7 +69,7 @@
 // citations. A lone citation links to its reference node's page (the native
 // in-page bibliography link is flattened away so there is no nested <a>); a
 // multi-item cluster renders as one grouped CSL run (plain text, matching the
-// previous behavior — graph edges to each reference still exist).
+// previous behavior; graph edges to each reference still exist).
 #let render-citation(group) = {
   let render-item(item) = cite(
     label(item.key),
@@ -96,10 +96,8 @@
 
 // The per-page "References" bibliography. Native `bibliography` with the default
 // `target: auto` scopes each page's bibliography to the citations in that page's
-// document (including citations pulled in through transclusion). `references` is
-// accepted for signature compatibility / the emit gate in `render-page`; the
-// native bibliography detects its own entries.
-#let render-references(references, bib) = {
+// document (including citations pulled in through transclusion).
+#let render-references(bib) = {
   html.section(class: "backmatter-section")[
     #html.h3(class: "backmatter-section-title")[References]
     #bibliography(

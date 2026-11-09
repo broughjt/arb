@@ -4,11 +4,11 @@
 // "Lemmas 0079 and 008j", sharing one pluralized kind word with each address its
 // own link. `template.typ`'s `render-link` routes here.
 
-#import "node.typ": node-taxon, node-link
+#import "node.typ": node-link
 #import "theorems.typ": theorem-kinds
 
 // Whether a node is a formal result that body-less references render specially.
-#let is-theorem-like(node) = node-taxon(node) in theorem-kinds
+#let is-theorem-like(node) = node.taxon in theorem-kinds
 
 // One linked, monospace formal-result address: `<a class="node-link node-ref">0079</a>`.
 #let _render-ref-address(target-node) = node-link(
@@ -22,7 +22,7 @@
 #let render-node-ref(target-node) = node-link(
   target-node,
   body: [
-    #html.span(class: "node-ref-kind")[#theorem-kinds.at(node-taxon(target-node)).singular]
+    #html.span(class: "node-ref-kind")[#theorem-kinds.at(target-node.taxon).singular]
     #html.span(class: "node-ref-address")[#target-node.id]
   ],
   extra-classes: ("node-ref",),
@@ -44,11 +44,11 @@
 // A `link-nodes(...)` group: several theorem-like references sharing one
 // pluralized kind word, e.g. "Lemmas 0079 and 008j". The shared word is prose;
 // each address is its own link. A one-id group renders as the singular form.
-// Mixed taxa are not yet supported (MVP panic). `nodes` are the group's node
-// records, in order; the caller resolves them, so that `site` is not passed in.
+// Mixed taxa are not yet supported (MVP panic). `nodes` are the group.s
+// template nodes, in order.
 #let render-node-ref-group(nodes) = {
   let ids = nodes.map(node => node.id)
-  let taxa = nodes.map(node-taxon)
+  let taxa = nodes.map(node => node.taxon)
 
   for (id, taxon) in ids.zip(taxa) {
     if taxon not in theorem-kinds {

@@ -1,5 +1,5 @@
 #import "@local/arb-core:0.1.0": collect-site, make-renderer
-#import "backmatter.typ": collect-backmatter
+#import "model.typ": collect-node-pages
 #import "node.typ": node-href
 #import "agda.typ": agda-context
 #import "template.typ": site-callbacks
@@ -8,13 +8,13 @@
 #let site(sources, bib: none, agda-annotations: none) = {
   let (site, bodies) = collect-site(sources)
 
-  let backmatter = collect-backmatter(site)
   let agda = agda-context(site, agda-annotations)
+  let node-pages = collect-node-pages(site, agda)
 
   let render = make-renderer(
     site,
     bodies,
-    ..site-callbacks(site, backmatter, agda, bib)
+    ..site-callbacks(node-pages, bib)
   )
 
   for (id, node) in site.nodes [

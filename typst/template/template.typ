@@ -7,14 +7,9 @@
   render-citation,
   render-references,
 )
-#import "node.typ": (
-  node-link,
-  node-taxon,
-  node-tags,
-  node-title-text,
-)
+#import "node.typ": node-link, node-title-text
 #import "node-metadata.typ": render-node-meta
-#import "agda.typ": agda-fences, render-agda-block
+#import "agda.typ": render-agda-block
 #import "theorems.typ": render-theorem, render-proof
 #import "link.typ": (
   is-theorem-like,
@@ -26,18 +21,15 @@
 #let script-path = "main.js"
 
 // The render callbacks for this site, as named arguments for arb-core's
-// `make-renderer`. The bodyless `site` and the template data computed from it
-// (`backmatter` from `collect-backmatter`, `agda` from `agda-context`) reach
-// the callbacks by closure capture, never by being added to `site`. Do not
-// rewrite this with `.with(...)`: a closure's captured values are hashed once,
-// whereas a `.with` function re-hashes its bound arguments on every call.
-//
-// For the same reason, the callbacks never pass `site`, `backmatter` or `agda`
-// to a helper function: every call hashes its arguments, and these are large
-// dictionaries. They resolve what a helper needs with loops and lookups,
-// which are not calls, and pass it the small result.
-#let site-callbacks(site, backmatter, agda, bib) = {
-  let render-link(target-id, target-node, body, metadata) = {
+// `make-renderer`. The node pages from `collect-node-pages` reach the callbacks by
+// closure capture. Do not rewrite this with `.with(...)`: a closure's captured
+// values are hashed once, whereas a `.with` function re-hashes its bound
+// arguments on every call. For the same reason, the callbacks never pass
+// `node-pages` to a helper function, only a node page or a template node.
+// arb-core's own node records are ignored (`_`) in favor of template nodes.
+#let site-callbacks(node-pages, bib) = {
+  let render-link(target-id, _, body, metadata) = {
+    let target-node = node-pages.at(target-id).node
     if metadata.at("citation", default: false) {
       if metadata.group-index == 0 {
         render-citation(metadata.group)
@@ -48,11 +40,11 @@
       if metadata.group-index == 0 {
         let nodes = ()
         for group-id in metadata.group {
-          let group-node = site.nodes.at(group-id, default: none)
-          if group-node == none {
+          let group-page = node-pages.at(group-id, default: none)
+          if group-page == none {
             panic("unknown node: " + group-id)
           }
-          nodes.push(group-node)
+          nodes.push(group-page.node)
         }
         render-node-ref-group(nodes)
       } else {
@@ -65,30 +57,13 @@
     }
   }
 
-  let render-page(id, node, body) = {
-    let node-backmatter = backmatter.at(id)
-    let revisions = node-backmatter.revisions
+  let render-page(id, _, body) = {
+    let node-page = node-pages.at(id)
+    let node = node-page.node
+    let backmatter = node-page.backmatter
     let has-sections = (
-      node-backmatter.contexts.keys().len() > 0
-        or node-backmatter.backlinks.keys().len() > 0
-        or node-backmatter.related.keys().len() > 0
+      backmatter.contexts.len() > 0 or backmatter.backlinks.len() > 0 or backmatter.related.len() > 0
     )
-    let fences = agda-fences(agda, id)
-
-    // Each rail section's entries, resolved here rather than in
-    // `render-backmatter-section` (see above).
-    let sections = (:)
-    for kind in ("contexts", "backlinks", "related") {
-      let entries = ()
-      for target in node-backmatter.at(kind).keys().sorted() {
-        let target-node = site.nodes.at(target, default: none)
-        if target-node == none {
-          panic("Node id didn't exist when rendering backmatter section")
-        }
-        entries.push((node: target-node, revisions: backmatter.at(target).revisions))
-      }
-      sections.insert(kind, entries)
-    }
 
     let article = html.article(class: "node")[
       // A hidden carrier for the search index's facet/meta values. Placed as a
@@ -96,33 +71,29 @@
       // *outside* the excluded regions (`.node-meta` is excluded, so its
       // taxon/id/tag text never reaches the index) so pagefind still reads these
       // attributes. taxon and each tag become `data-pagefind-filter` values
-      // (accumulated per key → `filters.taxon` / `filters.tag`); the id rides as
+      // (accumulated per key -> `filters.taxon` / `filters.tag`); the id rides as
       // `data-pagefind-meta` (title is auto-captured from the `<h1>`). The element
       // carries no text, so it adds nothing to the indexed content, and `hidden`
       // keeps it out of the rendered page and the a11y tree. See
-      // .scratch/search-design.md → "Facets".
+      // .scratch/search-design.md -> "Facets".
       #html.elem("div", attrs: (
         "class": "pagefind-attrs",
         "hidden": "",
         "data-pagefind-meta": "id:" + id,
-        "data-pagefind-filter": "taxon:" + node-taxon(node),
-      ))[#node-tags(node).map(tag => html.elem(
+        "data-pagefind-filter": "taxon:" + node.taxon,
+      ))[#node.tags.map(tag => html.elem(
         "span",
         attrs: ("data-pagefind-filter": "tag:" + tag),
       )).join()]
       #html.header(class: "node-header")[
-        #render-node-meta(id, node)
+        #render-node-meta(node)
         #html.h1(
           id: "node-" + id,
           class: "node-title",
-        )[#node.title#render-version-tag(revisions, class: "node-version")]
+        )[#node.title#render-version-tag(node.version, class: "node-version")]
       ]
-      #if revisions.in-chain {
-        let member-nodes = (:)
-        for member in revisions.members {
-          member-nodes.insert(member, site.nodes.at(member))
-        }
-        render-revision-callout(id, revisions, member-nodes)
+      #if node-page.versions != none {
+        render-revision-callout(node, node-page.versions)
       }
       #html.section(class: "node-mainmatter")[
         // Also covers transcluded bodies, which render inside the mainmatter.
@@ -137,16 +108,16 @@
           }
         }
         #show figure: it => html.elem("figure", attrs: (class: "typst"), html.frame(it.body))
-        #show raw.where(lang: "agda"): it => render-agda-block(fences, it)
+        #show raw.where(lang: "agda"): it => render-agda-block(node-page.agda-fences, it)
 
         #body
       ]
-      #if node-backmatter.references.keys().len() > 0 {
+      #if backmatter.references.len() > 0 {
         html.section(
           class: "backmatter",
           aria-label: "References",
         )[
-          #render-references(node-backmatter.references, bib)
+          #render-references(bib)
         ]
       }
       #if has-sections {
@@ -154,9 +125,9 @@
           class: "node-rail",
           aria-label: "Node context",
         )[
-          #render-backmatter-section([Contexts], "contexts", sections.contexts)
-          #render-backmatter-section([Backlinks], "backlinks", sections.backlinks)
-          #render-backmatter-section([Related], "related", sections.related)
+          #render-backmatter-section([Contexts], "contexts", backmatter.contexts)
+          #render-backmatter-section([Backlinks], "backlinks", backmatter.backlinks)
+          #render-backmatter-section([Related], "related", backmatter.related)
         ]
       }
     ]
@@ -183,14 +154,14 @@
     ]
   }
 
-  let render-transclusion(target-id, target-node, metadata, resolve-body) = {
+  let render-transclusion(target-id, _, metadata, resolve-body) = {
     let expanded = metadata.at("expanded", default: true)
-    let revisions = backmatter.at(target-id).revisions
-    let fences = agda-fences(agda, target-id)
+    let target-page = node-pages.at(target-id)
+    let target-node = target-page.node
     let title-body = node-link(
       target-node,
       body: html.span(class: "node-title-text")[
-        #target-node.title#render-version-tag(revisions, class: "node-version")
+        #target-node.title#render-version-tag(target-node.version, class: "node-version")
       ],
     )
 
@@ -200,14 +171,13 @@
       #html.details(open: expanded, class: "transclusion-details")[
         #html.summary(class: "transclusion-summary")[#title-body]
         #render-node-meta(
-          target-id,
           target-node,
           class: "transclusion-meta",
           aria-label: "Transcluded node metadata",
         )
         #html.div(class: "transclusion-body")[
           #show figure: it => html.elem("figure", attrs: (class: "typst"), html.frame(it.body))
-          #show raw.where(lang: "agda"): it => render-agda-block(fences, it)
+          #show raw.where(lang: "agda"): it => render-agda-block(target-page.agda-fences, it)
 
           #resolve-body()
         ]

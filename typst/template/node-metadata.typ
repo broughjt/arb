@@ -1,13 +1,9 @@
-#import "node.typ": (
-  node-link,
-  node-tags,
-  node-taxon,
-  taxon-class,
-)
+#import "node.typ": node-link
 
-#let render-node-meta(id, node, class: "node-meta", aria-label: "Node metadata") = {
-  let taxon = node-taxon(node)
-  let tags = node-tags(node)
+// `node` is a template node.
+#let render-node-meta(node, class: "node-meta", aria-label: "Node metadata") = {
+  let taxon = node.taxon
+  let tags = node.tags
 
   // Deterministic hue for a tag chip (Round F3): a small polynomial hash of the
   // tag text picks one of the six Modus chip hues, so the same tag gets the same
@@ -25,13 +21,13 @@
     #html.div(class: "node-meta-item node-meta-taxon")[
       #html.dt(class: "node-meta-label")[taxon]
       #html.dd(class: "node-meta-value")[
-        #html.elem("span", attrs: (class: ("node-taxon", taxon-class(taxon)).join(" ")))[#taxon]
+        #html.elem("span", attrs: (class: ("node-taxon", "taxon-" + taxon).join(" ")))[#taxon]
       ]
     ]
     #html.div(class: "node-meta-item node-meta-address")[
       #html.dt(class: "node-meta-label")[id]
       #html.dd(class: "node-meta-value")[
-        #node-link(node, body: id, extra-classes: ("node-address",))
+        #node-link(node, body: node.id, extra-classes: ("node-address",))
       ]
     ]
     #if tags.len() > 0 {
