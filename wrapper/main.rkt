@@ -1,6 +1,7 @@
 #lang typed/racket/base
 
-(require racket/file
+(require racket/cmdline
+         racket/file
          racket/function
          racket/list
          racket/match
@@ -15,11 +16,41 @@
 (define manifest-name "arb.toml")
 
 (module+ main
-  ;; TODO: Use command line parsing similar to the handoff script (see
-  ;; ~/repositories/handoff) when more than one subcommand is added
-  (match (current-command-line-arguments)
-    [(vector "build") (build (find-root (current-directory)))]
-    [_ (raise-user-error "usage: arb build")]))
+  (match (parse-arguments (current-command-line-arguments))
+    [(build-subcommand) (build (find-root (current-directory)))]))
+
+(define-type Subcommand (U build-subcommand))
+(struct build-subcommand () #:transparent)
+
+(: parse-arguments (-> (Vectorof String) Subcommand))
+(define (parse-arguments argv)
+  (command-line
+   #:program "arb"
+   #:argv argv
+   #:usage-help
+   "Commands:"
+   "  build  build the site into build/"
+   #:args (subcommand . arguments)
+   ;; Typed Racket types the formal arguments of `#:args` as `Any`, so we do a
+   ;; runtime check explicitly (that we expect will never fail).
+   (parse-subcommand (assert subcommand string?)
+                     (map (λ (a) (assert a string?)) arguments))))
+
+(: parse-subcommand (-> String (Listof String) Subcommand))
+(define (parse-subcommand subcommand arguments)
+  (define program (string-append "arb " subcommand))
+  (case subcommand
+    [("build") (parse-build-subcommand program arguments)]
+    [else (raise-user-error 'arb
+                            "unknown command ~a; expected build"
+                            subcommand)]))
+
+(: parse-build-subcommand (-> String (Listof String) build-subcommand))
+(define (parse-build-subcommand program arguments)
+  (command-line #:program program
+                #:argv arguments
+                #:args ()
+                (build-subcommand)))
 
 ;; Typst refuses to read files outside a fixed root (e.g. the project root), so
 ;; we need to put non-source inputs to `typst compile` or `typst watch` in an

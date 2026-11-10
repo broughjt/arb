@@ -134,8 +134,7 @@
 
           doInstallCheck = true;
           installCheckPhase = ''
-            usage=$($out/bin/arb 2>&1 || true)
-            echo "$usage" | grep -q 'usage: arb build'
+            $out/bin/arb --help | grep -q 'build  build the site'
           '';
         };
 
