@@ -193,8 +193,8 @@
 //   template nodes sorted by id. Related nodes are direct link targets that are
 //   not references. References are the reference nodes linked from the node or
 //   anything it reflexive-transitively transcludes.
-// - `agda-fences`: the rendered Agda fences of the node's module, or `none`
-#let collect-node-pages(site, agda) = {
+// - `agda-blocks`: the rendered Agda blocks of the node's module, by their text
+#let collect-node-pages(site, agda-blocks) = {
   let versions = _collect-versions(site)
 
   let nodes = (:)
@@ -230,7 +230,6 @@
   for (id, node) in nodes {
     let ids = backmatter.at(id)
     let chain = versions.at(id, default: none)
-    let module = if agda != none { agda.node-modules.at(id, default: none) }
 
     pages.insert(id, (
       node: node,
@@ -241,7 +240,7 @@
         related: template-nodes(ids.related),
         references: template-nodes(ids.references),
       ),
-      agda-fences: if module != none { agda.fences.at(module) },
+      agda-blocks: agda-blocks.at(id, default: (:)),
     ))
   }
 

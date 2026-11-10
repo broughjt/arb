@@ -1,6 +1,6 @@
 #import "@local/arb-core:0.1.0": collect-site, make-renderer
 #import "model.typ": collect-node-pages, node-href
-#import "agda.typ": agda-context
+#import "agda.typ": collect-agda-blocks
 #import "citations.typ": reference-sources
 #import "template.typ": render-link, render-page, render-transclusion
 
@@ -9,8 +9,8 @@
   let references = if bib != none { reference-sources(bib) } else { () }
   let (site, bodies) = collect-site(sources + references)
 
-  let agda = agda-context(site, agda-annotations)
-  let node-pages = collect-node-pages(site, agda)
+  let agda-blocks = collect-agda-blocks(site, agda-annotations)
+  let node-pages = collect-node-pages(site, agda-blocks)
 
   // The callbacks look up node pages and pass the render functions only what
   // they read. They are closures, not `.with` partial applications, so that

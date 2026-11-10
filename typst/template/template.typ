@@ -290,7 +290,7 @@
         }
       }
       #show figure: it => html.figure(class: "typst", html.frame(it.body))
-      #show raw.where(lang: "agda"): it => render-agda-block(node-page.agda-fences, it)
+      #show raw.where(lang: "agda"): it => render-agda-block(node-page.agda-blocks, it)
 
       #body
     ]
@@ -361,7 +361,7 @@
         aria-label: "Transcluded node metadata",
       )
       #html.div(class: "transclusion-body")[
-        #show raw.where(lang: "agda"): it => render-agda-block(target-page.agda-fences, it)
+        #show raw.where(lang: "agda"): it => render-agda-block(target-page.agda-blocks, it)
 
         #body
       ]
