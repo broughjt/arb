@@ -7,6 +7,7 @@
          racket/path
          racket/port
          racket/set
+         racket/string
          racket/system
          typed/file/glob
          typed/json)
@@ -64,7 +65,7 @@
     (lock-checkout)
     (delete-directory/files ".arb/staging" #:must-exist? #f)
     (delete-directory/files ".arb/types" #:must-exist? #f)
-    (write-sources sources ".arb/sources.txt")
+    (write-sources sources)
     (putenv "LC_ALL" "C.UTF-8")
     (stop-on-failure
      "agda-annotate"
@@ -95,13 +96,18 @@
 ;; writes after each one, to a FIFO, so that reading one opening of the FIFO to
 ;; its end is one finished compile. Each successful compile is published to
 ;; `build/`.
+;;
+;; Typst watches the files it reads, the source list among them, but cannot
+;; see a new source. So the wrapper watches the directories the globs can
+;; match in and rewrites the source list when the matches change.
 (: watch (-> Path Void))
 (define (watch root)
-  (define sources (source-paths root (read-manifest root)))
+  (define manifest (read-manifest root))
+  (define sources (source-paths root manifest))
   (parameterize ([current-directory root]
                  [current-subprocess-custodian-mode 'kill])
     (lock-checkout)
-    (write-sources sources ".arb/sources.txt")
+    (write-sources sources)
     (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
     (delete-directory/files ".arb/types" #:must-exist? #f)
     (make-directory ".arb/types")
@@ -156,6 +162,15 @@
         (write-bytes failure))
       (flush-output))
 
+    ;; A filesystem change event fires once, so after any of them fires they
+    ;; are all replaced, which also picks up new directories.
+    (define changes : (Listof (Rec x (Evtof x))) '())
+    (: watch-directories (-> Void))
+    (define (watch-directories)
+      (for-each filesystem-change-evt-cancel changes)
+      (set! changes (map filesystem-change-evt (source-directories manifest))))
+    (watch-directories)
+
     (with-handlers ([exn:break? void])
       (dynamic-wind
        void
@@ -174,6 +189,14 @@
                                  (set! pagefind-failure
                                        (publish (filter string? outputs)))
                                  (redraw))
+                               (loop)))
+                 (handle-evt (apply choice-evt changes)
+                             (λ (_)
+                               (watch-directories)
+                               (define matched (source-paths root manifest))
+                               (unless (equal? matched sources)
+                                 (set! sources matched)
+                                 (write-sources sources))
                                (loop)))
                  (handle-evt typst
                              (λ (_)
@@ -285,9 +308,32 @@
       (assert (find-relative-path root path) path?)))
   (sort (remove-duplicates paths) path<?))
 
-(: write-sources (-> (Listof Path) Path-String Void))
-(define (write-sources sources path)
-  (display-lines-to-file (map path->string sources) path #:exists 'truncate))
+;; The directories in which a change can change what the manifest's globs
+;; match: for each glob, the directory named before its first wildcard and
+;; every directory beneath it.
+(: source-directories (-> manifest (Listof Path)))
+(define (source-directories manifest)
+  (remove-duplicates
+   (for*/list : (Listof Path)
+              ([glob (in-list (manifest-source-globs manifest))]
+               [base (in-value
+                      (apply build-path
+                             'same
+                             (takef (string-split glob "/")
+                                    (λ ([element : String])
+                                      (not (regexp-match? #rx"[*?{[]"
+                                                          element))))))]
+               [directory (in-sequences (in-value base) (in-directory base))]
+               #:when (directory-exists? directory))
+     directory)))
+
+;; Typst may be watching the source list, so it is replaced by renaming.
+(: write-sources (-> (Listof Path) Void))
+(define (write-sources sources)
+  (display-lines-to-file (map path->string sources)
+                         ".arb/sources.txt.new"
+                         #:exists 'truncate)
+  (rename-file-or-directory ".arb/sources.txt.new" ".arb/sources.txt" #t))
 
 (: run (-> String (Listof Path-String) Void))
 (define (run program arguments)
