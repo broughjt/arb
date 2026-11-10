@@ -1,0 +1,1 @@
+- In Racket code, write `λ` rather than `lambda`.
