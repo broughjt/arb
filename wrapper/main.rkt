@@ -7,20 +7,32 @@
          racket/match
          racket/path
          racket/system
-         typed/file/glob)
+         typed/file/glob
+         typed/json)
 
-;; Typed Racket has no type for `path<?`.
 (require/typed racket/base [path<? (-> Path Path Boolean)])
 (require/typed toml [parse-toml (-> String (HashTable Symbol Any))])
+
+(module fifo racket/base
+  (require ffi/unsafe)
+  (provide make-fifo)
+  (define mkfifo
+    (get-ffi-obj "mkfifo" #f (_fun #:save-errno 'posix _path _int -> _int)))
+  (define (make-fifo path)
+    (unless (zero? (mkfifo path #o600))
+      (error 'arb "cannot make the FIFO ~a (errno ~a)" path (saved-errno)))))
+(require/typed 'fifo [make-fifo (-> Path-String Void)])
 
 (define manifest-name "arb.toml")
 
 (module+ main
   (match (parse-arguments (current-command-line-arguments))
-    [(build-subcommand) (build (find-root (current-directory)))]))
+    [(build-subcommand) (build (find-root (current-directory)))]
+    [(watch-subcommand) (watch (find-root (current-directory)))]))
 
-(define-type Subcommand (U build-subcommand))
+(define-type Subcommand (U build-subcommand watch-subcommand))
 (struct build-subcommand () #:transparent)
+(struct watch-subcommand () #:transparent)
 
 (: parse-arguments (-> (Vectorof String) Subcommand))
 (define (parse-arguments argv)
@@ -30,6 +42,7 @@
    #:usage-help
    "Commands:"
    "  build  build the site into build/"
+   "  watch  rebuild the site whenever a source changes"
    #:args (subcommand . arguments)
    ;; Typed Racket types the formal arguments of `#:args` as `Any`, so we do a
    ;; runtime check explicitly (that we expect will never fail).
@@ -41,8 +54,9 @@
   (define program (string-append "arb " subcommand))
   (case subcommand
     [("build") (parse-build-subcommand program arguments)]
+    [("watch") (parse-watch-subcommand program arguments)]
     [else (raise-user-error 'arb
-                            "unknown command ~a; expected build"
+                            "unknown command ~a; expected build or watch"
                             subcommand)]))
 
 (: parse-build-subcommand (-> String (Listof String) build-subcommand))
@@ -51,6 +65,13 @@
                 #:argv arguments
                 #:args ()
                 (build-subcommand)))
+
+(: parse-watch-subcommand (-> String (Listof String) watch-subcommand))
+(define (parse-watch-subcommand program arguments)
+  (command-line #:program program
+                #:argv arguments
+                #:args ()
+                (watch-subcommand)))
 
 ;; Typst refuses to read files outside a fixed root (e.g. the project root), so
 ;; we need to put non-source inputs to `typst compile` or `typst watch` in an
@@ -95,6 +116,66 @@
     (delete-directory/files "build" #:must-exist? #f)
     (rename-file-or-directory ".arb/staging" "build")))
 
+;; Runs `typst watch` with the terminal as its output, so Typst draws its own
+;; status and diagnostics.
+;;
+;; Typst writes its dependencies, the files it read and wrote, after every
+;; compile. We have it write them to a FIFO, so that dependencies arriving mean
+;; a compile has finished. Their `outputs` are `null` if the compile failed.
+(: watch (-> Path Void))
+(define (watch root)
+  (define sources (source-paths root (read-manifest root)))
+  (parameterize ([current-directory root])
+    (make-directory* ".arb")
+    (write-sources sources ".arb/sources.txt")
+    (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
+    (putenv "LC_ALL" "C.UTF-8")
+
+    ;; Typst's open of the FIFO for writing waits until there is a reader, so
+    ;; we open it for reading before starting Typst, and nothing is lost while
+    ;; we are between openings.
+    (define dependencies-path ".arb/deps")
+    (delete-directory/files dependencies-path #:must-exist? #f)
+    (make-fifo dependencies-path)
+    (define dependencies-port (open-input-file dependencies-path))
+    (define-values (typst _output _input _error)
+      (subprocess (current-output-port)
+                  (current-input-port)
+                  (current-error-port)
+                  (or (find-executable-path "typst")
+                      (raise-user-error 'arb "typst is not on PATH"))
+                  "watch"
+                  "--no-serve"
+                  "--features" "bundle,html"
+                  "--format" "bundle"
+                  "--root" "."
+                  "--deps" dependencies-path
+                  "--deps-format" "json"
+                  "site.typ"
+                  ".arb/staging"))
+
+    ;; An interrupt from the terminal reaches Typst too, and ends the watch.
+    (with-handlers ([exn:break? void])
+      (dynamic-wind
+       void
+       (thunk
+         (let loop : Void ()
+           (sync (handle-evt dependencies-port
+                             (λ (_)
+                               (for ([dependencies
+                                      (in-port read-json dependencies-port)])
+                                 (void))
+                               (close-input-port dependencies-port)
+                               (set! dependencies-port
+                                     (open-input-file dependencies-path))
+                               (loop)))
+                 (handle-evt typst
+                             (λ (_)
+                               (raise-user-error 'arb "typst exited"))))))
+       (thunk
+         (subprocess-kill typst #t)
+         (delete-file dependencies-path))))))
+
 (: find-root (-> Path Path))
 (define (find-root directory)
   (define-values (parent _name _directory?) (split-path directory))
@@ -134,7 +215,7 @@
 
 (: write-sources (-> (Listof Path) Path-String Void))
 (define (write-sources sources path)
-  (display-lines-to-file (map path->string sources) path))
+  (display-lines-to-file (map path->string sources) path #:exists 'truncate))
 
 (: run (->* (String (Listof Path-String)) (#:quiet? Boolean) Void))
 (define (run program arguments #:quiet? [quiet? #f])
