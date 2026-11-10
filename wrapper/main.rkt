@@ -1,7 +1,6 @@
 #lang typed/racket/base
 
 (require racket/file
-         racket/function
          racket/list
          racket/match
          racket/path
@@ -12,8 +11,10 @@
          typed/file/glob
          typed/json)
 
-;; Typed Racket has no type for `path<?`.
-(require/typed racket/base [path<? (-> Path Path Boolean)])
+;; Typed Racket has no type for these.
+(require/typed racket/base
+               [path<? (-> Path Path Boolean)]
+               [file-or-directory-stat (-> Path (HashTable Symbol Integer))])
 (require/typed toml [parse-toml (-> String (HashTable Symbol Any))])
 ;; Typed Racket's type for `subprocess` does not allow the error output to be
 ;; merged into the standard output.
@@ -69,11 +70,8 @@
     (putenv "LC_ALL" "C.UTF-8")
     (stop-on-failure
      "agda-annotate"
-     (capture-failure
-      "agda-annotate"
-      (list* "-o"
-             ".arb"
-             (filter (curryr path-has-extension? #".lagda.typ") sources))))
+     (capture-failure "agda-annotate"
+                      (list* "-o" ".arb" (filter agda-source? sources))))
     (run "typst"
          (list "compile"
                "--root" "."
@@ -100,17 +98,26 @@
 ;; Typst watches the files it reads, the source list among them, but cannot
 ;; see a new source. So the wrapper watches the directories the globs can
 ;; match in and rewrites the source list when the matches change.
+;;
+;; The same events show when a literate Agda source was modified, and then
+;; agda-annotate runs again, beside the loop since it is slow. Typst starts
+;; with no annotations and gets them when the first run ends. A failed run
+;; takes them away again, since annotations of an older source can make the
+;; template panic. Either way Typst sees the file change and recompiles, and
+;; publishing that compile carries the hover files into `build/`.
 (: watch (-> Path Void))
 (define (watch root)
   (define manifest (read-manifest root))
   (define sources (source-paths root manifest))
   (parameterize ([current-directory root]
+                 [current-custodian (make-custodian)]
                  [current-subprocess-custodian-mode 'kill])
     (lock-checkout)
     (write-sources sources)
-    (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
+    (replace-file ".arb/agda-annotations.json" "{}")
     (delete-directory/files ".arb/types" #:must-exist? #f)
     (make-directory ".arb/types")
+    (putenv "LC_ALL" "C.UTF-8")
 
     ;; The FIFO is opened before Typst starts. Opening it for reading does not
     ;; wait for a writer, but Typst's open for writing waits for a reader, so
@@ -143,6 +150,7 @@
     (close-output-port typst-input)
 
     (define typst-output : Bytes #"")
+    (define agda-status : Bytes #"")
     (define pagefind-failure : (U Bytes #f) #f)
     (define chunk (make-bytes 65536))
     (: read-typst-output (-> Void))
@@ -156,6 +164,7 @@
     (define (redraw)
       (write-bytes clear-screen)
       (write-bytes typst-output)
+      (write-bytes agda-status)
       (define failure pagefind-failure)
       (when failure
         (write-bytes #"pagefind failed\n")
@@ -170,6 +179,19 @@
       (for-each filesystem-change-evt-cancel changes)
       (set! changes (map filesystem-change-evt (source-directories manifest))))
     (watch-directories)
+
+    ;; At most one agda-annotate runs. A change during a run queues one more.
+    (define agda : (U 'idle 'running 'queued) 'idle)
+    (define agda-failures : (Channelof (U Bytes #f)) (make-channel))
+    (define modified (modification-times (filter agda-source? sources)))
+    (: start-agda (-> Void))
+    (define (start-agda)
+      (define files (filter agda-source? sources))
+      (set! agda 'running)
+      (set! agda-status #"agda: checking ...\n")
+      (thread (λ () (channel-put agda-failures (annotate files))))
+      (redraw))
+    (start-agda)
 
     (with-handlers ([exn:break? void])
       (dynamic-wind
@@ -197,6 +219,28 @@
                                (unless (equal? matched sources)
                                  (set! sources matched)
                                  (write-sources sources))
+                               (define times
+                                 (modification-times
+                                  (filter agda-source? sources)))
+                               (unless (equal? times modified)
+                                 (set! modified times)
+                                 (if (eq? agda 'idle)
+                                     (start-agda)
+                                     (set! agda 'queued)))
+                               (loop)))
+                 (handle-evt agda-failures
+                             (λ ([failure : (U Bytes #f)])
+                               (install-annotations failure)
+                               (set! agda-status
+                                     (if failure
+                                         (bytes-append
+                                          #"agda: failed, highlighting is off\n"
+                                          failure)
+                                         #"agda: ok\n"))
+                               (if (eq? agda 'queued)
+                                   (start-agda)
+                                   (set! agda 'idle))
+                               (redraw)
                                (loop)))
                  (handle-evt typst
                              (λ (_)
@@ -204,13 +248,43 @@
                                (redraw)
                                (raise-user-error 'arb "typst exited"))))))
        (λ ()
-         (subprocess-kill typst #t)
-         (delete-file fifo))))))
+         (delete-file fifo)
+         (custodian-shutdown-all (current-custodian)))))))
 
 (: after-last-clear (-> Bytes Bytes))
 (define (after-last-clear output)
   (define pattern (byte-regexp (bytes-append #"^.*" (regexp-quote clear-screen))))
   (assert (regexp-replace pattern output #"") bytes?))
+
+(: agda-source? (-> Path Boolean))
+(define (agda-source? path)
+  (path-has-extension? path #".lagda.typ"))
+
+(: modification-times (-> (Listof Path) (Listof (Pairof Path Integer))))
+(define (modification-times paths)
+  (for/list ([path (in-list paths)])
+    (cons path
+          (hash-ref (file-or-directory-stat path) 'modify-time-nanoseconds))))
+
+;; Runs agda-annotate into `.arb/agda`, emptied first, and returns its output
+;; if it failed. A type error fails the run and writes nothing.
+(: annotate (-> (Listof Path) (U Bytes #f)))
+(define (annotate files)
+  (delete-directory/files ".arb/agda" #:must-exist? #f)
+  (capture-failure "agda-annotate" (list* "-o" ".arb/agda" files)))
+
+;; Gives Typst the annotations and hover files of a run of `annotate`, or no
+;; annotations if the run failed.
+(: install-annotations (-> (U Bytes #f) Void))
+(define (install-annotations failure)
+  (cond
+    [failure (replace-file ".arb/agda-annotations.json" "{}")]
+    [else
+     (delete-directory/files ".arb/types")
+     (rename-file-or-directory ".arb/agda/types" ".arb/types")
+     (rename-file-or-directory ".arb/agda/agda-annotations.json"
+                               ".arb/agda-annotations.json"
+                               #t)]))
 
 ;; Two commands at once in one checkout would trample `.arb/`, so each takes
 ;; an exclusive lock on `.arb/lock` in the current directory, creating `.arb/`
@@ -327,13 +401,19 @@
                #:when (directory-exists? directory))
      directory)))
 
-;; Typst may be watching the source list, so it is replaced by renaming.
 (: write-sources (-> (Listof Path) Void))
 (define (write-sources sources)
-  (display-lines-to-file (map path->string sources)
-                         ".arb/sources.txt.new"
-                         #:exists 'truncate)
-  (rename-file-or-directory ".arb/sources.txt.new" ".arb/sources.txt" #t))
+  (replace-file ".arb/sources.txt"
+                (string-append* (for/list : (Listof String)
+                                          ([source (in-list sources)])
+                                  (format "~a\n" source)))))
+
+;; Typst may be watching the file, so it is replaced by renaming.
+(: replace-file (-> String String Void))
+(define (replace-file path content)
+  (define new (string-append path ".new"))
+  (display-to-file content new #:exists 'truncate)
+  (rename-file-or-directory new path #t))
 
 (: run (-> String (Listof Path-String) Void))
 (define (run program arguments)
