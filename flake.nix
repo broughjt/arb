@@ -98,22 +98,23 @@
         agda-annotate = pkgs.haskell.lib.justStaticExecutables
           (pkgs.haskellPackages.callCabal2nix "agda-annotate" ./agda-annotate { });
 
-        # A stopgap build of the notes site until arb's build command exists.
-        # Note: expects the dev shell's Typst package paths.
-        arb-build = pkgs.writeShellApplication {
-          name = "arb-build";
-          runtimeInputs = with pkgs; [ jq typst ];
-          text = builtins.readFile ./build.sh;
-        };
+        arb = pkgs.runCommand "arb" { nativeBuildInputs = [ pkgs.racket pkgs.makeWrapper ]; } ''
+          mkdir -p $out/lib $out/bin
+          cp ${./wrapper/main.rkt} $out/lib/main.rkt
+          HOME=$TMPDIR raco make $out/lib/main.rkt
+          makeWrapper ${pkgs.racket}/bin/racket $out/bin/arb --add-flags $out/lib/main.rkt
+        '';
       in
       {
         packages = {
-          inherit agda-annotate arb-build;
+          inherit agda-annotate arb;
         };
 
         devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
-            arb-build
+            agda-annotate
+            arb
+            pagefind
             racket
             typst
           ];

@@ -6,7 +6,7 @@
 -- Type-checks every given file (plus everything they import) and, for each
 -- visited literate-Typst module, emits token and type annotations:
 --
---   OUTDIR/annotations.json
+--   OUTDIR/agda-annotations.json
 --     { "Base.Family.Properties":
 --         { "path": "subtrees/barb/source/Base/Family/Properties.lagda.typ",
 --           "blocks": [ [ {"p": 135, "s": "module", "a": ["Keyword"]}, ... ] ] }
@@ -14,11 +14,11 @@
 --   OUTDIR/types/Base.Family.Properties.json
 --     { "1200": {"name": "＝→reflexive", "type": "..."} }
 --
--- annotations.json is one input for the Typst build (one entry per module,
+-- agda-annotations.json is one input for the Typst build (one entry per module,
 -- one block per ```agda fence, in document order); the types files are
 -- per-module assets fetched by the hover client. "path" is relative to the
 -- working directory the tool is invoked from. Builtin (non-Typst) modules
--- such as Agda.Primitive get a types file but no annotations.json entry:
+-- such as Agda.Primitive get a types file but no agda-annotations.json entry:
 -- their fences render nowhere, but corpus tokens carry definition sites into
 -- them and the hover client can still resolve those to a declared type.
 --
@@ -177,7 +177,7 @@ annotateAll absPaths = do
 writeOutputs :: FilePath -> [ModuleAnnotations] -> IO ()
 writeOutputs outDir mods = do
   createDirectoryIfMissing True (outDir </> "types")
-  BSL.writeFile (outDir </> "annotations.json") $ Aeson.encode $ Aeson.object
+  BSL.writeFile (outDir </> "agda-annotations.json") $ Aeson.encode $ Aeson.object
     [ Key.fromString (modName m) Aeson..= Aeson.object
         [ "path" Aeson..= path, "blocks" Aeson..= blocks ]
     | m <- mods
