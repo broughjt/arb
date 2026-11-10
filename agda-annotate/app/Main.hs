@@ -61,12 +61,14 @@ import Agda.Compiler.Backend
 import Agda.Compiler.Common (setInterface, curDefs, sortDefs)
 import Agda.Interaction.FindFile (findFile)
 import Agda.Interaction.Imports
-  (Mode(..), parseSource, typeCheckMain)
+  (Source(..), getNonMainInterface, importPrimitiveModules, parseSource)
 import Agda.Interaction.Highlighting.Precise hiding (toList)
 import Agda.Interaction.Options (defaultOptions)
 
 import qualified Agda.Syntax.Common.Aspect as Asp
 import qualified Agda.Syntax.Abstract as A
+import qualified Agda.Syntax.Concrete as C
+import Agda.Interaction.Library.Base (AgdaLibFile(..), OptionsPragma(..))
 import qualified Agda.Syntax.Internal as I
 import qualified Agda.Syntax.Internal.Generic as I
 
@@ -136,8 +138,17 @@ annotateAll absPaths = do
     p : _ -> absolute =<< findProjectRoot (filePath p)
     [] -> die "no source files given"
   setCommandLineOptions' projectRoot defaultOptions
-  forM_ absPaths \absPath ->
-    typeCheckMain TypeCheck =<< parseSource =<< TCB.srcFromPath absPath
+  -- Check each file as an import. typeCheckMain checks its module in place in
+  -- the session's state, so calling it for several files makes the output
+  -- depend on their order. The options are set as typeCheckMain sets them.
+  forM_ absPaths \absPath -> do
+    source <- parseSource =<< TCB.srcFromPath absPath
+    mapM_ checkAndSetOptionsFromPragma $
+      map _libPragmas (srcProjectLibs source) ++
+      [ OptionsPragma options range
+      | C.OptionsPragma range options <- C.modPragmas (srcModule source) ]
+    importPrimitiveModules
+    getNonMainInterface (srcModuleName source) (Just source)
 
   visited <- useTC stVisitedModules
   cwd <- liftIO getCurrentDirectory
