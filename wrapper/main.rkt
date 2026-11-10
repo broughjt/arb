@@ -6,6 +6,7 @@
          racket/match
          racket/path
          racket/port
+         racket/set
          racket/system
          typed/file/glob
          typed/json)
@@ -65,11 +66,13 @@
     (delete-directory/files ".arb/types" #:must-exist? #f)
     (write-sources sources ".arb/sources.txt")
     (putenv "LC_ALL" "C.UTF-8")
-    (run "agda-annotate"
-         (list* "-o"
-                ".arb"
-                (filter (curryr path-has-extension? #".lagda.typ") sources))
-         #:quiet? #t)
+    (stop-on-failure
+     "agda-annotate"
+     (capture-failure
+      "agda-annotate"
+      (list* "-o"
+             ".arb"
+             (filter (curryr path-has-extension? #".lagda.typ") sources))))
     (run "typst"
          (list "compile"
                "--root" "."
@@ -77,13 +80,7 @@
                "--format" "bundle"
                "site.typ"
                ".arb/staging"))
-    (copy-directory/files ".arb/types" ".arb/staging/types")
-    (run "pagefind"
-         (list "--site" ".arb/staging"
-               "--root-selector" ".node"
-               "--exclude-selectors"
-               ".node-meta, .node-rail, .backmatter, pre, .transclusion, math[display='block']")
-         #:quiet? #t)
+    (stop-on-failure "pagefind" (finish-staging))
     (delete-directory/files "build" #:must-exist? #f)
     (rename-file-or-directory ".arb/staging" "build")))
 
@@ -93,9 +90,11 @@
 
 ;; Runs `typst watch` and owns the screen: on every change it clears the screen
 ;; and prints Typst's current block, which is whatever Typst wrote after its
-;; last clear. That text is never parsed. Whether a compile succeeded comes
-;; from the dependency record Typst writes after each one, to a FIFO, so that
-;; reading one opening of the FIFO to its end is one finished compile.
+;; last clear, and then pagefind's output if it failed. Typst's text is never
+;; parsed. Whether a compile succeeded comes from the dependency record Typst
+;; writes after each one, to a FIFO, so that reading one opening of the FIFO to
+;; its end is one finished compile. Each successful compile is published to
+;; `build/`.
 (: watch (-> Path Void))
 (define (watch root)
   (define sources (source-paths root (read-manifest root)))
@@ -104,6 +103,8 @@
     (lock-checkout)
     (write-sources sources ".arb/sources.txt")
     (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
+    (delete-directory/files ".arb/types" #:must-exist? #f)
+    (make-directory ".arb/types")
 
     ;; The FIFO is opened before Typst starts. Opening it for reading does not
     ;; wait for a writer, but Typst's open for writing waits for a reader, so
@@ -136,6 +137,7 @@
     (close-output-port typst-input)
 
     (define typst-output : Bytes #"")
+    (define pagefind-failure : (U Bytes #f) #f)
     (define chunk (make-bytes 65536))
     (: read-typst-output (-> Void))
     (define (read-typst-output)
@@ -148,6 +150,10 @@
     (define (redraw)
       (write-bytes clear-screen)
       (write-bytes typst-output)
+      (define failure pagefind-failure)
+      (when failure
+        (write-bytes #"pagefind failed\n")
+        (write-bytes failure))
       (flush-output))
 
     (with-handlers ([exn:break? void])
@@ -160,7 +166,15 @@
                                (read-typst-output)
                                (redraw)
                                (loop)))
-                 (handle-evt compiles (λ ([_record : JSExpr]) (loop)))
+                 (handle-evt compiles
+                             (λ ([record : JSExpr])
+                               (define outputs
+                                 (and (hash? record) (hash-ref record 'outputs)))
+                               (when (list? outputs)
+                                 (set! pagefind-failure
+                                       (publish (filter string? outputs)))
+                                 (redraw))
+                               (loop)))
                  (handle-evt typst
                              (λ (_)
                                (read-typst-output)
@@ -185,6 +199,54 @@
   (define port (open-output-file ".arb/lock" #:exists 'truncate))
   (unless (port-try-file-lock? port 'exclusive)
     (raise-user-error 'arb "another arb command is running in this checkout")))
+
+;; Adds to `.arb/staging` what Typst does not write: the hover files and the
+;; search index. Returns pagefind's output if it failed.
+(: finish-staging (-> (U Bytes #f)))
+(define (finish-staging)
+  (copy-directory/files ".arb/types" ".arb/staging/types")
+  (capture-failure
+   "pagefind"
+   (list "--site" ".arb/staging"
+         "--root-selector" ".node"
+         "--exclude-selectors"
+         ".node-meta, .node-rail, .backmatter, pre, .transclusion, math[display='block']")))
+
+;; Publishes a successful compile, given the files it wrote: makes `build/`
+;; hold exactly what a one-shot build would. Returns pagefind's output if it
+;; failed.
+;;
+;; The copy into `build/` is not atomic, so a reader can see it half done.
+;; Typst may also begin its next compile meanwhile, so a file can be copied
+;; while Typst rewrites it; the publish of that compile repairs it.
+(: publish (-> (Listof String) (U Bytes #f)))
+(define (publish outputs)
+  ;; Typst never deletes an output it has stopped emitting, and pagefind names
+  ;; its files by content hash, so stale ones would pile up.
+  (delete-directory/files ".arb/staging/types" #:must-exist? #f)
+  (delete-directory/files ".arb/staging/pagefind" #:must-exist? #f)
+  (define written (list->set outputs))
+  (for ([file (in-list (files-in ".arb/staging"))])
+    (define staged (build-path ".arb/staging" file))
+    (unless (set-member? written (path->string staged))
+      (delete-file staged)))
+  (define pagefind-failure (finish-staging))
+  (define staged (files-in ".arb/staging"))
+  (for ([file (in-list staged)])
+    (define published (build-path "build" file))
+    (make-parent-directory* published)
+    (copy-file (build-path ".arb/staging" file) published #:exists-ok? #t))
+  (for ([file (in-list (files-in "build"))])
+    (unless (member file staged)
+      (delete-file (build-path "build" file))))
+  pagefind-failure)
+
+;; The files in a directory and beneath it, relative to it.
+(: files-in (-> Path-String (Listof Path)))
+(define (files-in directory)
+  (parameterize ([current-directory directory])
+    (for/list ([file (in-directory)] #:when (file-exists? file))
+      file)))
 
 (: find-root (-> Path Path))
 (define (find-root directory)
@@ -227,19 +289,26 @@
 (define (write-sources sources path)
   (display-lines-to-file (map path->string sources) path #:exists 'truncate))
 
-(: run (->* (String (Listof Path-String)) (#:quiet? Boolean) Void))
-(define (run program arguments #:quiet? [quiet? #f])
+(: run (-> String (Listof Path-String) Void))
+(define (run program arguments)
+  (unless (apply system* (executable-path program) arguments)
+    (raise-user-error 'arb "~a failed" program)))
+
+;; Runs a program with its output captured, and returns the output if the
+;; program failed.
+(: capture-failure (-> String (Listof Path-String) (U Bytes #f)))
+(define (capture-failure program arguments)
   (define output (open-output-bytes))
   (define succeeded?
-    (parameterize ([current-output-port (if quiet?
-                                            output
-                                            (current-output-port))]
-                   [current-error-port (if quiet?
-                                           output
-                                           (current-error-port))])
+    (parameterize ([current-output-port output]
+                   [current-error-port output])
       (apply system* (executable-path program) arguments)))
-  (unless succeeded?
-    (write-bytes (get-output-bytes output) (current-error-port))
+  (and (not succeeded?) (get-output-bytes output)))
+
+(: stop-on-failure (-> String (U Bytes #f) Void))
+(define (stop-on-failure program failure)
+  (when failure
+    (write-bytes failure (current-error-port))
     (raise-user-error 'arb "~a failed" program)))
 
 (: executable-path (-> String Path))
