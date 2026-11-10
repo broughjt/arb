@@ -39,4 +39,18 @@
     ),
     pretty: false
   ))
+
+  for name in (
+    "style.css",
+    "main.js",
+    "main.js.map",
+    "EBGaramond-Variable.ttf",
+    "EBGaramond-Italic-Variable.ttf",
+    "SourceSans3-Variable.ttf",
+    "JuliaMono-Regular.ttf",
+    "JuliaMono-Bold.ttf",
+    "LatinModernMath-Regular.otf",
+  ) {
+    asset(name, read("assets/" + name, encoding: none))
+  }
 }

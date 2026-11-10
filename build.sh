@@ -1,9 +1,7 @@
 # A stopgap build of the notes site, kept only until arb's build command
 # replaces it. It runs from anywhere inside a notes repository and writes the
-# site to `build/`. It deliberately leaves out the Agda annotations, the
-# Pagefind index, the fonts and the bundled TypeScript.
-#
-# The flake prepends `styles=<the template's stylesheet partials>`.
+# site to `build/`. It deliberately leaves out the Agda annotations and the
+# Pagefind index.
 
 # The project root is the nearest directory with a weibian.json.
 root=$PWD
@@ -36,15 +34,6 @@ typst compile \
   --format bundle \
   --input sources=/$scratch/sources.txt \
   site.typ "$scratch/staging"
-
-# The partials in order, separated by blank lines, as the old wrapper joined
-# them.
-separator=
-for partial in "$styles"/*.css; do
-  printf '%b' "$separator"
-  cat "$partial"
-  separator='\n\n'
-done > "$scratch/staging/style.css"
 
 rm -rf build
 mv "$scratch/staging" build

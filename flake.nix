@@ -12,9 +12,6 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # A Typst package directory laid out the way Typst looks up `@local`
-        # packages, `local/<name>/<version>`, with the name and version taken
-        # from its typst.toml.
         localTypstPackage = source: files:
           let
             manifest = (pkgs.lib.importTOML (source + "/typst.toml")).package;
@@ -23,9 +20,9 @@
           pkgs.runCommand "typst-local-${manifest.name}" { } ''
             mkdir -p $out/local/${manifest.name}
             cp -r ${source} ${directory}
-            chmod u+w ${directory}
+            chmod -R u+w ${directory}
             ${pkgs.lib.concatLines (pkgs.lib.mapAttrsToList
-              (name: path: "cp ${path} ${directory}/${name}")
+              (name: path: "cp '${path}' ${directory}/${name}")
               files)}
           '';
 
@@ -34,23 +31,38 @@
           hash = "sha256-AC+t541+T+nUKTaha0OoBmsJcBP2JV30Cxv7pmMe/5s=";
         };
 
-        # Typst takes a single package path, so the local packages need to share
-        # a single `local/` tree.
+        script = pkgs.runCommand "arb-script" { nativeBuildInputs = [ pkgs.esbuild ]; } ''
+          mkdir $out
+          cd $out
+          cp ${./typst/template/assets}/*.ts .
+          esbuild main.ts --bundle '--external:/pagefind/*' --format=esm \
+            --minify --sourcemap --outfile=main.js
+          rm *.ts
+        '';
+
+        fonts = {
+          "EBGaramond-Variable.ttf" = "${pkgs.google-fonts}/share/fonts/truetype/EBGaramond[wght].ttf";
+          "EBGaramond-Italic-Variable.ttf" = "${pkgs.google-fonts}/share/fonts/truetype/EBGaramond-Italic[wght].ttf";
+          "SourceSans3-Variable.ttf" = "${pkgs.google-fonts}/share/fonts/truetype/SourceSans3[wght].ttf";
+          "JuliaMono-Regular.ttf" = "${pkgs.julia-mono}/share/fonts/truetype/JuliaMono-Regular.ttf";
+          "JuliaMono-Bold.ttf" = "${pkgs.julia-mono}/share/fonts/truetype/JuliaMono-Bold.ttf";
+          "LatinModernMath-Regular.otf" = "${pkgs.lmodern}/share/fonts/opentype/public/lm-math/latinmodern-math.otf";
+        };
+
         localPackages = pkgs.symlinkJoin {
           name = "typst-local-packages";
           paths = [
             (localTypstPackage ./typst/arb-core { })
             (localTypstPackage ./typst/prelude { })
-            (localTypstPackage ./typst/template {
+            (localTypstPackage ./typst/template ({
               "chicago-author-date.csl" = chicagoAuthorDateCsl;
-            })
+              "assets/main.js" = "${script}/main.js";
+              "assets/main.js.map" = "${script}/main.js.map";
+            } // pkgs.lib.mapAttrs' (name: pkgs.lib.nameValuePair "assets/${name}") fonts))
           ];
         };
 
-        # Typst Universe packages, laid out as Typst's package cache,
-        # `preview/<name>/<version>`, so that Typst never downloads them.
-        # fletcher depends on cetz, which depends on oxifmt.
-        previewPackages = pkgs.linkFarm "typst-preview-packages"
+        typstUniversePackages = pkgs.linkFarm "typst-preview-packages"
           (map
             ({ name, version, hash }: {
               name = "preview/${name}/${version}";
@@ -91,9 +103,7 @@
         arb-build = pkgs.writeShellApplication {
           name = "arb-build";
           runtimeInputs = with pkgs; [ jq typst ];
-          text = ''
-            styles=${./typst/template/assets/styles}
-          '' + builtins.readFile ./build.sh;
+          text = builtins.readFile ./build.sh;
         };
       in
       {
@@ -111,7 +121,7 @@
           # If you edit a Typst package here, you need to re-enter the dev shell
           # for the change to take effect inside the environment.
           TYPST_PACKAGE_PATH = localPackages;
-          TYPST_PACKAGE_CACHE_PATH = previewPackages;
+          TYPST_PACKAGE_CACHE_PATH = typstUniversePackages;
         };
       });
 }
