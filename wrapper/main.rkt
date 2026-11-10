@@ -32,14 +32,17 @@
 ;; directory inside `.arb/` and then rename it to `build/` at the end, so a
 ;; failed build leaves the previous one alone and no stale pages survive.
 ;;
-;; TODO: Two builds at once in one checkout trample `.arb/`. Revisit whether
-;; to take a lock per checkout when adding watch.
+;; The `.arb/` directory is kept between builds, since it holds the lock.
+;; Only `.arb/staging` and `.arb/types` must start out empty: Typst never
+;; deletes an output it has stopped emitting, and the hover file of a deleted
+;; module would otherwise be copied into the site.
 (: build (-> Path Void))
 (define (build root)
   (define sources (source-paths root (read-manifest root)))
   (parameterize ([current-directory root])
-    (delete-directory/files ".arb" #:must-exist? #f)
-    (make-directory ".arb")
+    (lock-checkout)
+    (delete-directory/files ".arb/staging" #:must-exist? #f)
+    (delete-directory/files ".arb/types" #:must-exist? #f)
     (write-sources sources ".arb/sources.txt")
     (putenv "LC_ALL" "C.UTF-8")
     (run "agda-annotate"
@@ -63,6 +66,17 @@
          #:quiet? #t)
     (delete-directory/files "build" #:must-exist? #f)
     (rename-file-or-directory ".arb/staging" "build")))
+
+;; Two commands at once in one checkout would trample `.arb/`, so each takes
+;; an exclusive lock on `.arb/lock` in the current directory, creating `.arb/`
+;; if needed, and fails if another holds it. The port is never closed: the
+;; lock lasts until the process exits, when the OS releases it.
+(: lock-checkout (-> Void))
+(define (lock-checkout)
+  (make-directory* ".arb")
+  (define port (open-output-file ".arb/lock" #:exists 'truncate))
+  (unless (port-try-file-lock? port 'exclusive)
+    (raise-user-error 'arb "another arb command is running in this checkout")))
 
 (: find-root (-> Path Path))
 (define (find-root directory)
@@ -103,7 +117,7 @@
 
 (: write-sources (-> (Listof Path) Path-String Void))
 (define (write-sources sources path)
-  (display-lines-to-file (map path->string sources) path))
+  (display-lines-to-file (map path->string sources) path #:exists 'truncate))
 
 (: run (->* (String (Listof Path-String)) (#:quiet? Boolean) Void))
 (define (run program arguments #:quiet? [quiet? #f])
