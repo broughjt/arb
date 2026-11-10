@@ -98,14 +98,69 @@
         agda-annotate = pkgs.haskell.lib.justStaticExecutables
           (pkgs.haskellPackages.callCabal2nix "agda-annotate" ./agda-annotate { });
 
-        arb = pkgs.runCommand "arb" { nativeBuildInputs = [ pkgs.racket pkgs.makeWrapper ]; } ''
-          mkdir -p $out/lib $out/bin
-          cp ${./wrapper/main.rkt} $out/lib/main.rkt
-          HOME=$TMPDIR raco make $out/lib/main.rkt
-          makeWrapper ${pkgs.racket}/bin/racket $out/bin/arb --add-flags $out/lib/main.rkt
-        '';
+        arb = pkgs.stdenvNoCC.mkDerivation {
+          name = "arb";
+          src = ./wrapper;
+          nativeBuildInputs = with pkgs; [ racket makeWrapper removeReferencesTo ];
+
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR
+            raco exe -o arb main.rkt
+            raco distribute dist arb
+            runHook postBuild
+          '';
+
+          installPhase = ''
+            runHook preInstall
+            cp -r dist/. $out
+            wrapProgram $out/bin/arb \
+              --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.typst agda-annotate pkgs.pagefind ]} \
+              --set TYPST_PACKAGE_PATH ${localPackages} \
+              --set TYPST_PACKAGE_CACHE_PATH ${typstUniversePackages}
+            runHook postInstall
+          '';
+
+          # The `raco distribute` command makes the executable self-contained,
+          # but compiled code keeps source paths into Racket. Nothing reads them
+          # at run time, so remove them to keep the full distribution, GTK
+          # included, out of the closure.
+          postFixup = ''
+            find $out -type f -exec remove-references-to -t ${pkgs.racket} {} +
+          '';
+          disallowedReferences = [ pkgs.racket ];
+
+          doInstallCheck = true;
+          installCheckPhase = ''
+            usage=$($out/bin/arb 2>&1 || true)
+            echo "$usage" | grep -q 'usage: arb build'
+          '';
+        };
+
+        # The site built by `arb build` from `src`, a source tree with the
+        # marker file at its root.
+        buildSite = { src }: pkgs.stdenvNoCC.mkDerivation {
+          name = "arb-site";
+          inherit src;
+          nativeBuildInputs = [ arb ];
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR
+            arb build
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            cp -r build $out
+            runHook postInstall
+          '';
+        };
       in
       {
+        lib = {
+          inherit buildSite;
+        };
+
         packages = {
           inherit agda-annotate arb;
         };
