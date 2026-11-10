@@ -18,4 +18,5 @@ executable agda-annotate
     , directory
     , filepath
     , mtl
+    , split
     , text
