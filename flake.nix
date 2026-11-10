@@ -98,6 +98,8 @@
         agda-annotate = pkgs.haskell.lib.justStaticExecutables
           (pkgs.haskellPackages.callCabal2nix "agda-annotate" ./agda-annotate { });
 
+        racketDependencies = pkgs.callPackage ./nix/racket-dependencies.nix { };
+
         arb = pkgs.stdenvNoCC.mkDerivation {
           name = "arb";
           src = ./wrapper;
@@ -105,7 +107,7 @@
 
           buildPhase = ''
             runHook preBuild
-            export HOME=$TMPDIR
+            export HOME=$TMPDIR PLTADDONDIR=${racketDependencies}
             raco exe -o arb main.rkt
             raco distribute dist arb
             runHook postBuild
@@ -122,13 +124,13 @@
           '';
 
           # The `raco distribute` command makes the executable self-contained,
-          # but compiled code keeps source paths into Racket. Nothing reads them
-          # at run time, so remove them to keep the full distribution, GTK
-          # included, out of the closure.
+          # but compiled code keeps source paths into Racket and its add-on
+          # directory. Nothing reads them at run time, so remove them to keep
+          # the full distribution, GTK included, out of the closure.
           postFixup = ''
-            find $out -type f -exec remove-references-to -t ${pkgs.racket} {} +
+            find $out -type f -exec remove-references-to -t ${pkgs.racket} -t ${racketDependencies} {} +
           '';
-          disallowedReferences = [ pkgs.racket ];
+          disallowedReferences = [ pkgs.racket racketDependencies ];
 
           doInstallCheck = true;
           installCheckPhase = ''
@@ -176,6 +178,7 @@
           # for the change to take effect inside the environment.
           TYPST_PACKAGE_PATH = localPackages;
           TYPST_PACKAGE_CACHE_PATH = typstUniversePackages;
+          PLTADDONDIR = racketDependencies;
         };
       });
 }

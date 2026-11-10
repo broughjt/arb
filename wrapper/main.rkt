@@ -6,13 +6,13 @@
          racket/match
          racket/path
          racket/system
-         typed/file/glob
-         typed/json)
+         typed/file/glob)
 
 ;; Typed Racket has no type for `path<?`.
 (require/typed racket/base [path<? (-> Path Path Boolean)])
+(require/typed toml [parse-toml (-> String (HashTable Symbol Any))])
 
-(define marker "weibian.json")
+(define manifest-name "arb.toml")
 
 (module+ main
   ;; TODO: Use command line parsing similar to the handoff script (see
@@ -36,7 +36,7 @@
 ;; to take a lock per checkout when adding watch.
 (: build (-> Path Void))
 (define (build root)
-  (define sources (source-paths root (read-config root)))
+  (define sources (source-paths root (read-manifest root)))
   (parameterize ([current-directory root])
     (delete-directory/files ".arb" #:must-exist? #f)
     (make-directory ".arb")
@@ -68,30 +68,36 @@
 (define (find-root directory)
   (define-values (parent _name _directory?) (split-path directory))
   (cond
-    [(file-exists? (build-path directory marker)) directory]
+    [(file-exists? (build-path directory manifest-name)) directory]
     [(path? parent) (find-root parent)]
     [else (raise-user-error 'arb
                             "no ~a in this directory or above it"
-                            marker)]))
+                            manifest-name)]))
 
-(struct config ([source-globs : (Listof String)]))
+(struct manifest ([source-globs : (Listof String)]))
 
-(: read-config (-> Path config))
-(define (read-config root)
-  (define json (call-with-input-file (build-path root marker) read-json))
-  (define globs (and (hash? json) (hash-ref json 'sources #f)))
+(: read-manifest (-> Path manifest))
+(define (read-manifest root)
+  (define table
+    (with-handlers ([exn:fail? (λ ([e : exn])
+                                 (raise-user-error 'arb
+                                                   "~a: ~a"
+                                                   manifest-name
+                                                   (exn-message e)))])
+      (parse-toml (file->string (build-path root manifest-name)))))
+  (define globs (hash-ref table 'sources #f))
   (if (and (list? globs) (andmap string? globs))
-      (config globs)
+      (manifest globs)
       (raise-user-error 'arb
-                        "~a must have a \"sources\" array of glob strings"
-                        marker)))
+                        "~a must have a sources array of glob strings"
+                        manifest-name)))
 
-;; The files matching the source globs, relative to ROOT.
-(: source-paths (-> Path config (Listof Path)))
-(define (source-paths root config)
+(: source-paths (-> Path manifest (Listof Path)))
+(define (source-paths root manifest)
   (define paths
-    (for*/list : (Listof Path) ([glob (in-list (config-source-globs config))]
-                                [path (in-glob (build-path root glob))])
+    (for*/list : (Listof Path)
+               ([glob (in-list (manifest-source-globs manifest))]
+                [path (in-glob (build-path root glob))])
       (assert (find-relative-path root path) path?)))
   (sort (remove-duplicates paths) path<?))
 
