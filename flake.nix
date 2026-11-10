@@ -167,9 +167,7 @@
 
         devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
-            agda-annotate
             arb
-            pagefind
             racket
             typst
           ];
