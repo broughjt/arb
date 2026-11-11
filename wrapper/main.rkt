@@ -117,11 +117,7 @@
     (rename-file-or-directory ".arb/staging" "build")))
 
 ;; Runs `typst watch` with the terminal as its output, so Typst draws its own
-;; status and diagnostics.
-;;
-;; Typst writes its dependencies, the files it read and wrote, after every
-;; compile. We have it write them to a FIFO, so that dependencies arriving mean
-;; a compile has finished. Their `outputs` are `null` if the compile failed.
+;; status and diagnostics, and reads the record Typst writes after each compile.
 (: watch (-> Path Void))
 (define (watch root)
   (define sources (source-paths root (read-manifest root)))
@@ -131,13 +127,40 @@
     (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
     (putenv "LC_ALL" "C.UTF-8")
 
-    ;; Typst's open of the FIFO for writing waits until there is a reader, so
-    ;; we open it for reading before starting Typst, and nothing is lost while
-    ;; we are between openings.
+    ;; The `--deps` Typst option causes it to write the compilation dependencies
+    ;; to a file. We use this to detect compilation iterations during `typst
+    ;; watch`, since parsing its terminal output (on stderr) for this
+    ;; information is quite tricky. Typst writes the dependencies as part of the
+    ;; call to `compile_once` in the main watch loop in
+    ;; crates/typst-cli/src/watch.rs. It writes them last, after the outputs and
+    ;; the diagnostics, once per compile whether or not the compile succeeded.
+    ;;
+    ;; For each compile, Typst opens the path afresh (`File::create`), writes
+    ;; one record, and closes it. Were the path a regular file, each record
+    ;; would overwrite the last, nothing would tell us when one arrived, and we
+    ;; could read one half rewritten. We make the path a FIFO instead: its
+    ;; truncation does nothing, so the records queue up in order, the port
+    ;; becomes ready when one arrives, and if we fall behind, Typst's writes
+    ;; block rather than overwrite. (`--deps -` would need no FIFO, but Typst
+    ;; never flushes its stdout, so the records would sit in its buffer.)
+    ;;
+    ;; Once the last writer of a FIFO closes, its reader sees EOF. We hold a
+    ;; write end open ourselves, so the FIFO never reaches EOF and the records
+    ;; arrive as one stream of JSON objects, which delimit themselves. (Hence
+    ;; `--deps-format json`: the records of the `zero` format would run
+    ;; together.) Reopening the read end after each EOF would instead leave a
+    ;; window in which Typst could open the FIFO before we close the old read
+    ;; end, and closing it would then lose the record or fail Typst's write.
+    ;;
+    ;; We open the read end first, because a non-blocking open of the write end
+    ;; fails while there is no reader. So Typst's open, which waits for a
+    ;; reader, never waits.
     (define dependencies-path ".arb/deps")
     (delete-directory/files dependencies-path #:must-exist? #f)
     (make-fifo dependencies-path)
     (define dependencies-port (open-input-file dependencies-path))
+    (define dependencies-writer
+      (open-output-file dependencies-path #:exists 'append))
     (define-values (typst _output _input _error)
       (subprocess (current-output-port)
                   (current-input-port)
@@ -159,40 +182,43 @@
       (dynamic-wind
        void
        (thunk
-         (let loop : Void ([dependencies-port dependencies-port])
+         (let loop : Void ()
            (sync (handle-evt dependencies-port
                              (λ (_)
-                               (for ([dependencies
-                                      (in-port read-dependencies
-                                               dependencies-port)])
-                                 (void))
-                               (close-input-port dependencies-port)
-                               (loop (open-input-file dependencies-path))))
+                               (read-dependencies dependencies-port)
+                               (loop)))
                  (handle-evt typst
                              (λ (_)
                                (raise-user-error 'arb "typst exited"))))))
        (thunk
          (subprocess-kill typst #t)
+         (close-output-port dependencies-writer)
+         (close-input-port dependencies-port)
          (delete-file dependencies-path))))))
 
-;; What Typst writes after a compile: the files it read and the files it wrote,
-;; relative to the current directory. The `outputs` are `#f` if the compile
-;; failed.
+;; Typst has a `--deps` option that writes the inputs and outputs of a compile
+;; to a file. Paths under the root are relative to the current directory, and
+;; paths outside it, such as files in the Typst package cache, are absolute. The
+;; `outputs` field is `#f` if the compile failed. See `write_deps_json` in
+;; Typst's crates/typst-cli/src/deps.rs.
 (struct dependencies ([inputs : (Listof Path)]
                       [outputs : (U #f (Listof Path))]))
 
-(: read-dependencies (-> Input-Port (U dependencies EOF)))
+(: read-dependencies (-> Input-Port dependencies))
 (define (read-dependencies port)
-  (define json (read-json port))
-  (cond
-    [(eof-object? json) eof]
-    [else
-     (define table (assert json hash?))
-     (define inputs (assert (hash-ref table 'inputs) list?))
-     (define outputs (hash-ref table 'outputs))
-     (dependencies (map string->path (filter string? inputs))
-                   (and (list? outputs)
-                        (map string->path (filter string? outputs))))]))
+  ;; We opened the FIFO with a write end too, so the port will not ever yield
+  ;; EOF.
+  (define table (assert (read-json port) hash?))
+  (define inputs (assert (hash-ref table 'inputs) list?))
+  (define outputs (hash-ref table 'outputs))
+  ;; Shouldn't we be making sure each element is a string and failing explicitly
+  ;; otherwise?
+
+  ;; And shouldn't we check that it is either #f or a list of strings, not
+  ;; silently assume it was #f if it is not a list?
+  (dependencies (map string->path (filter string? inputs))
+                (and (list? outputs)
+                     (map string->path (filter string? outputs)))))
 
 (: find-root (-> Path Path))
 (define (find-root directory)
