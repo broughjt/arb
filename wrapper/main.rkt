@@ -130,31 +130,23 @@
     ;; The `--deps` Typst option causes it to write the compilation dependencies
     ;; to a file. We use this to detect compilation iterations during `typst
     ;; watch`, since parsing its terminal output (on stderr) for this
-    ;; information is quite tricky. Typst writes the dependencies as part of the
-    ;; call to `compile_once` in the main watch loop in
-    ;; crates/typst-cli/src/watch.rs. It writes them last, after the outputs and
-    ;; the diagnostics, once per compile whether or not the compile succeeded.
+    ;; information is quite tricky. Typst writes these dependencies during
+    ;; `compile_once` that is called in the body of the main watch loop, after
+    ;; the outputs and diagnostics have been written (See
+    ;; crates/typst-cli/src/watch.rs).
     ;;
-    ;; For each compile, Typst opens the path afresh (`File::create`), writes
-    ;; one record, and closes it. Were the path a regular file, each record
-    ;; would overwrite the last, nothing would tell us when one arrived, and we
-    ;; could read one half rewritten. We make the path a FIFO instead: its
-    ;; truncation does nothing, so the records queue up in order, the port
-    ;; becomes ready when one arrives, and if we fall behind, Typst's writes
-    ;; block rather than overwrite. (`--deps -` would need no FIFO, but Typst
-    ;; never flushes its stdout, so the records would sit in its buffer.)
+    ;; For each compilation iteration in watch, Typst opens the path again with
+    ;; `File::create` (which truncates if the file already exists), writes the
+    ;; dependencies as a JSON object, and closes it. We use a FIFO to avoid the
+    ;; dependencies of previous iterations getting overwritten by subsequent
+    ;; ones. With a FIFO, the truncation does nothing, the writes queue up in
+    ;; order, the port becomes ready when data arrives, and if we fall behind in
+    ;; reading, Typst's writes block for us to catch up.
     ;;
-    ;; Once the last writer of a FIFO closes, its reader sees EOF. We hold a
-    ;; write end open ourselves, so the FIFO never reaches EOF and the records
-    ;; arrive as one stream of JSON objects, which delimit themselves. (Hence
-    ;; `--deps-format json`: the records of the `zero` format would run
-    ;; together.) Reopening the read end after each EOF would instead leave a
-    ;; window in which Typst could open the FIFO before we close the old read
-    ;; end, and closing it would then lose the record or fail Typst's write.
-    ;;
-    ;; We open the read end first, because a non-blocking open of the write end
-    ;; fails while there is no reader. So Typst's open, which waits for a
-    ;; reader, never waits.
+    ;; Once the last writer of a FIFO closes, the reader gets EOF. We open the
+    ;; file for writing ourselves to avoid this. We make use of the fact that
+    ;; JSON objects are prefix-free, so we can delimit them without needing to
+    ;; wait for EOFs.
     (define dependencies-path ".arb/deps")
     (delete-directory/files dependencies-path #:must-exist? #f)
     (make-fifo dependencies-path)
@@ -208,17 +200,20 @@
 (define (read-dependencies port)
   ;; We opened the FIFO with a write end too, so the port will not ever yield
   ;; EOF.
-  (define table (assert (read-json port) hash?))
-  (define inputs (assert (hash-ref table 'inputs) list?))
-  (define outputs (hash-ref table 'outputs))
-  ;; Shouldn't we be making sure each element is a string and failing explicitly
-  ;; otherwise?
-
-  ;; And shouldn't we check that it is either #f or a list of strings, not
-  ;; silently assume it was #f if it is not a list?
-  (dependencies (map string->path (filter string? inputs))
-                (and (list? outputs)
-                     (map string->path (filter string? outputs)))))
+  (define json (read-json port))
+  (: invalid (-> Nothing))
+  (define (invalid)
+    (error 'arb "unexpected dependencies from Typst: ~e" json))
+  (: parse-paths (-> Any (Listof Path)))
+  (define (parse-paths strings)
+    (if (and (list? strings) (andmap string? strings))
+        (map string->path strings)
+        (invalid)))
+  (define table (if (hash? json) json (invalid)))
+  (define outputs (hash-ref table 'outputs invalid))
+  (dependencies (parse-paths (hash-ref table 'inputs invalid))
+                (and (not (eq? outputs 'null))
+                     (parse-paths outputs))))
 
 (: find-root (-> Path Path))
 (define (find-root directory)
