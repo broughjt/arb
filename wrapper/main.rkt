@@ -159,22 +159,40 @@
       (dynamic-wind
        void
        (thunk
-         (let loop : Void ()
+         (let loop : Void ([dependencies-port dependencies-port])
            (sync (handle-evt dependencies-port
                              (λ (_)
                                (for ([dependencies
-                                      (in-port read-json dependencies-port)])
+                                      (in-port read-dependencies
+                                               dependencies-port)])
                                  (void))
                                (close-input-port dependencies-port)
-                               (set! dependencies-port
-                                     (open-input-file dependencies-path))
-                               (loop)))
+                               (loop (open-input-file dependencies-path))))
                  (handle-evt typst
                              (λ (_)
                                (raise-user-error 'arb "typst exited"))))))
        (thunk
          (subprocess-kill typst #t)
          (delete-file dependencies-path))))))
+
+;; What Typst writes after a compile: the files it read and the files it wrote,
+;; relative to the current directory. The `outputs` are `#f` if the compile
+;; failed.
+(struct dependencies ([inputs : (Listof Path)]
+                      [outputs : (U #f (Listof Path))]))
+
+(: read-dependencies (-> Input-Port (U dependencies EOF)))
+(define (read-dependencies port)
+  (define json (read-json port))
+  (cond
+    [(eof-object? json) eof]
+    [else
+     (define table (assert json hash?))
+     (define inputs (assert (hash-ref table 'inputs) list?))
+     (define outputs (hash-ref table 'outputs))
+     (dependencies (map string->path (filter string? inputs))
+                   (and (list? outputs)
+                        (map string->path (filter string? outputs))))]))
 
 (: find-root (-> Path Path))
 (define (find-root directory)
