@@ -104,6 +104,8 @@
   (define value (thunk))
   (timed-result value start (current-inexact-milliseconds)))
 
+(define staging-directory ".arb/staging")
+
 ;; If a step fails the subsequent steps will be `#f`.
 (struct build-result ([agda-annotate : (timed-result agda-annotate-result)]
                       [typst : (U (timed-result typst-result) #f)]
@@ -123,19 +125,17 @@
 ;;
 ;; The `site.typ` file expects a `.arb/sources.txt` file which contains a
 ;; newline-separated list of source paths and an `.arb/agda-annotations.json`
-;; file that contains the Agda annotations. We first build into a staging
-;; directory inside `.arb/` and then rename it to `build/` at the end, so a
-;; failed build leaves the previous one alone and no stale pages survive.
-;;
-;; Two of `build` and `watch` at once in one checkout would trample `.arb/`, so
-;; each holds an exclusive lock on `.arb/lock` and fails if it is taken. That
-;; is why `.arb/` itself is never deleted.
+;; file that contains the Agda annotations. Typst writes into a staging
+;; directory inside `.arb/`, and `publish` makes `build/` from it, so a failed
+;; build leaves the previous one alone and no stale pages survive.
 (: build (-> Path build-result))
 (define (build root)
   (define sources (source-paths root (read-manifest root)))
   (parameterize ([current-directory root])
     (make-directory* ".arb")
     (define lock (open-output-file ".arb/lock" #:exists 'append))
+    ;; We hold a lock on a `.arb/lock` file so that multiple builds or watches
+    ;; do not clobber each other.
     (unless (port-try-file-lock? lock 'exclusive)
       (raise-user-error 'arb "another build or watch is running in ~a" root))
     (delete-directory/files ".arb/staging" #:must-exist? #f)
@@ -155,30 +155,58 @@
            (call-timed
             (thunk
               (run-typst-compile
-               (typst-input 'compile "site.typ" ".arb/staging" ".arb/deps"))))))
+               (typst-input 'compile "site.typ" staging-directory ".arb/deps"))))))
     (define pagefind
       (and typst
-           (let ([dependencies
-                  (typst-result-dependencies (timed-result-value typst))])
-             (and dependencies (typst-dependencies-outputs dependencies)))
-           (begin
-             (copy-directory/files ".arb/types" ".arb/staging/types")
-             (call-timed
-              (thunk
-                (run-pagefind (pagefind-input ".arb/staging"
-                                              pagefind-root-selector
-                                              pagefind-exclude-selectors)))))))
-    (define result (build-result agda-annotate typst pagefind))
-    (when (build-succeeded? result)
-      (delete-directory/files "build" #:must-exist? #f)
-      (rename-file-or-directory ".arb/staging" "build"))
+           (let* ([dependencies
+                   (typst-result-dependencies (timed-result-value typst))]
+                  [outputs
+                   (and dependencies (typst-dependencies-outputs dependencies))])
+             (and outputs
+                  (call-timed (thunk (publish outputs ".arb/types")))))))
     (close-output-port lock)
-    result))
+    (build-result agda-annotate typst pagefind)))
+
+;; We copy the outputs out of the staging directory rather than renaming it for
+;; two reasons. First, Typst does not delete old output files, so we want to
+;; avoid these stale files in the build directory. Second, we want to avoid
+;; subsequent watch compile iterations from conflicting with pagefind runs.
+;;
+;; Copying the files might race with Typst's next compile, but eh. The files
+;; will be replaced with their correct version in the next iteration, and the
+;; time window is small.
+(: publish (-> (Listof Path) (U Path-String #f) pagefind-result))
+(define (publish outputs types)
+  (define publish-directory ".arb/publish")
+  (delete-directory/files publish-directory #:must-exist? #f)
+  (define staging (path->complete-path staging-directory))
+  (for ([output (in-list outputs)])
+    (define relative
+      (assert (find-relative-path staging (path->complete-path output)) path?))
+    (when (memq 'up (explode-path relative))
+      (error 'arb "Typst wrote ~a outside ~a" output staging-directory))
+    (define published (build-path publish-directory relative))
+    (make-parent-directory* published)
+    (copy-file output published))
+  (when types
+    (copy-directory/files types (build-path publish-directory "types")))
+  (define result
+    (run-pagefind (pagefind-input publish-directory
+                                  pagefind-root-selector
+                                  pagefind-exclude-selectors)))
+  (when (pagefind-result-succeeded? result)
+    (delete-directory/files "build" #:must-exist? #f)
+    (rename-file-or-directory publish-directory "build"))
+  result)
 
 (: build-succeeded? (-> build-result Boolean))
 (define (build-succeeded? result)
   (define pagefind (build-result-pagefind result))
   (and pagefind (pagefind-result-succeeded? (timed-result-value pagefind))))
+
+;; If the compile failed the pagefind step will be `#f`.
+(struct watch-result ([typst : (timed-result typst-result)]
+                      [pagefind : (U (timed-result pagefind-result) #f)]))
 
 (: handle-watch (-> Void))
 (define (handle-watch)
@@ -209,14 +237,23 @@
                           [current-subprocess-custodian-mode 'kill])
              (watch-typst (typst-input 'watch
                                        "site.typ"
-                                       ".arb/staging"
+                                       staging-directory
                                        dependencies-path))))
          (let loop : Void ()
            (sync (handle-evt iterations
-                             (λ ([result : (timed-result typst-result)])
-                               (print-typst-result result)
-                               (unless (typst-result-dependencies
-                                        (timed-result-value result))
+                             (λ ([typst : (timed-result typst-result)])
+                               (define dependencies
+                                 (typst-result-dependencies
+                                  (timed-result-value typst)))
+                               (define outputs
+                                 (and dependencies
+                                      (typst-dependencies-outputs dependencies)))
+                               (define pagefind
+                                 (and outputs
+                                      (call-timed
+                                       (thunk (publish outputs #f)))))
+                               (print-watch-result (watch-result typst pagefind))
+                               (unless dependencies
                                  (raise-user-error 'arb "typst exited"))
                                (loop)))
                  ;; An error in a thread ends only that thread.
@@ -240,6 +277,13 @@
   (print-agda-annotate-result agda-annotate)
   (when typst
     (print-typst-result typst))
+  (when pagefind
+    (print-pagefind-result pagefind)))
+
+(: print-watch-result (-> watch-result Void))
+(define (print-watch-result result)
+  (match-define (watch-result typst pagefind) result)
+  (print-typst-result typst)
   (when pagefind
     (print-pagefind-result pagefind)))
 
