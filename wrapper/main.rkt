@@ -7,6 +7,7 @@
          racket/list
          racket/match
          racket/path
+         racket/port
          racket/promise
          racket/string
          racket/system
@@ -246,7 +247,34 @@
   (print-step "typst"
               typst
               (if outputs (format "~a files" (length outputs)) "failed"))
-  (display diagnostics (current-error-port)))
+  (for ([diagnostic (in-list diagnostics)]
+        #:unless (ignored-typst-warning? diagnostic))
+    (displayln (typst-diagnostic->string diagnostic) (current-error-port))))
+
+(define ignored-typst-warnings
+  (list "bundle export is experimental"
+        "overline was ignored during MathML export"))
+
+(: ignored-typst-warning? (-> typst-diagnostic Boolean))
+(define (ignored-typst-warning? diagnostic)
+  (and (not (typst-error? diagnostic))
+       (member (typst-diagnostic-message diagnostic) ignored-typst-warnings)
+       #t))
+
+(: typst-diagnostic->string (-> typst-diagnostic String))
+(define (typst-diagnostic->string diagnostic)
+  (match-define (typst-diagnostic severity location message) diagnostic)
+  (format "~a~a: ~a"
+          (match location
+            [(typst-location package path line column)
+             (format "~a~a:~a:~a: "
+                     (if package (string-append package "/") "")
+                     path
+                     line
+                     column)]
+            [#f ""])
+          severity
+          message))
 
 (: print-pagefind-result (-> (timed-result pagefind-result) Void))
 (define (print-pagefind-result pagefind)
@@ -315,27 +343,114 @@
                 "--format" "bundle"
                 "--deps" dependencies-path
                 "--deps-format" "json"
+                "--diagnostic-format" "short"
                 input-path
                 output-path)))
 
 ;; The `dependencies` field is `#f` if Typst stopped before it wrote them, for
-;; example because the input file is missing. The diagnostics are the text
-;; Typst printed, warnings included.
+;; example because the input file is missing.
 (struct typst-result ([dependencies : (U typst-dependencies #f)]
-                      [diagnostics : String]))
+                      [diagnostics : (Listof typst-diagnostic)]))
 
 (: run-typst-compile (-> typst-input typst-result))
 (define (run-typst-compile input)
   (define executable (force typst-executable))
   (define output (open-output-string))
-  (parameterize ([current-output-port output]
-                 [current-error-port output])
-    (apply system* executable (typst-arguments input)))
+  (define succeeded?
+    (parameterize ([current-output-port output]
+                   [current-error-port output])
+      (apply system* executable (typst-arguments input))))
+  (define diagnostics (parse-typst-diagnostics (get-output-string output)))
+  (unless (eq? succeeded? (not (ormap typst-error? diagnostics)))
+    (error 'arb
+           "Typst's exit code and its diagnostics disagree: ~e"
+           (get-output-string output)))
   (define dependencies-path (typst-input-dependencies input))
   (typst-result (and (file-exists? dependencies-path)
                      (call-with-input-file dependencies-path
                        read-typst-dependencies))
-                (get-output-string output)))
+                diagnostics))
+
+(struct typst-location ([package : (U String #f)]
+                        [path : String]
+                        [line : Natural]
+                        [column : Natural])
+  #:transparent)
+(struct typst-diagnostic ([severity : (U 'error 'warning)]
+                          [location : (U typst-location #f)]
+                          [message : String])
+  #:transparent)
+
+(: typst-error? (-> typst-diagnostic Boolean))
+(define (typst-error? diagnostic)
+  (eq? (typst-diagnostic-severity diagnostic) 'error))
+
+;; Regex for the first line of a diagnostic in Typst's `short` format, which
+;; consists of an optional location, a severity, and a message. Examples:
+;;
+;;   notes/002c.typ:47:1: error: unknown variable: nope
+;;
+;;   @local/arb:0.1.0/template.typ:2:2: error: assertion failed
+;;
+;;   warning: bundle export is experimental
+(define typst-diagnostic-pattern
+  (let* ([natural "[0-9]+"]
+         [identifier "[a-zA-Z_][a-zA-Z0-9_-]*"]
+         [package (string-append "@" identifier "/" identifier
+                                 ":" natural "[.]" natural "[.]" natural)]
+         [location (string-append "(?:(" package ")/)?"
+                                  "([^:]+)"
+                                  ":(" natural ")"
+                                  ":(" natural ")")])
+    (pregexp (string-append "^"
+                            "(?:" location ": )?"
+                            "(error|warning): "
+                            "(.*)"
+                            "$"))))
+
+(: parse-typst-diagnostics (-> String (Listof typst-diagnostic)))
+(define (parse-typst-diagnostics output)
+  (: unexpected (-> Nothing))
+  (define (unexpected)
+    (error 'arb "unexpected diagnostics from Typst: ~e" output))
+  (: parse-natural (-> (U String #f) Natural))
+  (define (parse-natural digits)
+    (assert (string->number (or digits (unexpected)))
+            exact-nonnegative-integer?))
+  (unless (or (string=? output "") (string-suffix? output "\n"))
+    (unexpected))
+  (define diagnostics
+    (for/fold ([diagnostics : (Listof typst-diagnostic) null]
+               #:result (reverse diagnostics))
+              ([line (in-list (port->lines (open-input-string output)))])
+      (match (regexp-match typst-diagnostic-pattern line)
+        [(list _
+               package
+               path
+               line-number
+               column
+               (? string? severity)
+               (? string? message))
+         (cons (typst-diagnostic
+                (if (string=? severity "error") 'error 'warning)
+                (and path
+                     (typst-location package
+                                     path
+                                     (parse-natural line-number)
+                                     (parse-natural column)))
+                message)
+               diagnostics)]
+        [_
+         (match diagnostics
+           [(cons (typst-diagnostic severity location message) earlier)
+            (cons (typst-diagnostic severity
+                                    location
+                                    (string-append message "\n" line))
+                  earlier)]
+           [_ (unexpected)])])))
+  (when (ormap typst-error? (dropf diagnostics typst-error?))
+    (unexpected))
+  diagnostics)
 
 ;; Typst has a `--deps` option that writes the inputs and outputs of a compile
 ;; to a file. Paths under the root are relative to the current directory, and
@@ -433,8 +548,9 @@
                   iterations
                   (timed-result
                    (typst-result #f
-                                 (bytes->string/utf-8 (get-output-bytes output)
-                                                      #\uFFFD))
+                                 (parse-typst-diagnostics
+                                  (bytes->string/utf-8 (get-output-bytes output)
+                                                       #\uFFFD)))
                    (or start now)
                    now)))))
           (handle-evt
@@ -482,8 +598,10 @@
 ;; status and hold the whole iteration, which it does once the iteration's
 ;; dependencies have arrived. The iteration ends where the next status begins.
 ;; Typst prints a status in several writes, of which the first is "watching", so
-;; the output can end partway through one.
-(: parse-typst-watch-iteration (-> Bytes (Values Boolean String Bytes)))
+;; the output can end partway through one. The result status must agree with
+;; the diagnostics.
+(: parse-typst-watch-iteration
+   (-> Bytes (Values Boolean (Listof typst-diagnostic) Bytes)))
 (define (parse-typst-watch-iteration output)
   (: unexpected (-> Nothing))
   (define (unexpected)
@@ -498,19 +616,30 @@
   (unless (bytes=? compiling #"compiling ...")
     (unexpected))
   (define-values (result after-result) (parse-status after-compiling))
-  (define succeeded?
-    (cond
-      [(regexp-match? #rx#"^compiled (successfully|with warnings) in " result)
-       #t]
-      [(bytes=? result #"compiled with errors") #f]
-      [else (unexpected)]))
   (define end
     (match (regexp-match-positions #rx#"(?m:^watching)" after-result)
       [(list (cons start _)) start]
       [_ (bytes-length after-result)]))
-  (values succeeded?
-          (bytes->string/utf-8 (subbytes after-result 0 end) #\uFFFD)
-          (subbytes after-result end)))
+  (define diagnostics
+    (parse-typst-diagnostics
+     (bytes->string/utf-8 (subbytes after-result 0 end) #\uFFFD)))
+  (define errors? (ormap typst-error? diagnostics))
+  (define succeeded?
+    (cond
+      [(regexp-match? #rx#"^compiled successfully in " result)
+       (unless (null? diagnostics)
+         (unexpected))
+       #t]
+      [(regexp-match? #rx#"^compiled with warnings in " result)
+       (when (or (null? diagnostics) errors?)
+         (unexpected))
+       #t]
+      [(bytes=? result #"compiled with errors")
+       (unless errors?
+         (unexpected))
+       #f]
+      [else (unexpected)]))
+  (values succeeded? diagnostics (subbytes after-result end)))
 
 ;; `pagefind` wrapper
 
@@ -611,46 +740,57 @@
       (print-build-result result))
     (list (get-output-string output) (get-output-string error)))
 
-  ;; Examples of real program output in note builds, with Typst's warnings cut
-  ;; down to the first two and the path of the checkout shortended.
+  ;; Examples of real program output, with Typst's warnings cut down and the
+  ;; path of the checkout shortened.
 
-  (define typst-warnings #<<END
-warning: bundle export is experimental
- = hint: its behaviour may change at any time
- = hint: do not rely on this feature for production use cases
+  (define typst-warnings-output
+    (string-append
+     "warning: bundle export is experimental\n"
+     "notes/002c.typ:40:23: warning: overline was ignored during MathML export\n"
+     "notes/002c.typ:40:48: warning: overline was ignored during MathML export\n"))
 
-warning: overline was ignored during MathML export
-   ┌─ notes/002c.typ:40:23
-   │
-40 │     quad f^(frak(A)_i)(overline(a)) = f^frak(A)(overline(a)),
-   │                        ^^^^^^^^^^^
+  (define typst-error-output
+    (string-append
+     "notes/002c.typ:47:1: error: unknown variable: nope\n"
+     "warning: bundle export is experimental\n"))
 
+  (define typst-package-error-output
+    (string-append
+     "@local/demo:0.1.0/lib.typ:5:12: error: panicked with: (\n"
+     "  alpha: \"a\",\n"
+     "  gamma: (1, 2, 3),\n"
+     ")\n"
+     "main.typ:1:16: warning: unknown font family: no such font\n"))
 
-END
-    )
-
-  (define typst-error #<<END
-error: unknown variable: nope
-   ┌─ notes/002c.typ:47:1
-   │
-47 │ #nope
-   │  ^^^^
-
-  while including `notes/002c.typ` at site.typ:6:49
-    include path
-  while calling `map` at site.typ:6:2
-    source-paths.map(path => (path: path, content: include path))
-
-warning: bundle export is experimental
- = hint: its behaviour may change at any time
- = hint: do not rely on this feature for production use cases
-
-
-END
-    )
-
-  (define typst-missing-input
+  (define typst-missing-input-output
     "error: input file not found (searched at site.typ)\n")
+
+  (: overline-warning (-> Natural typst-diagnostic))
+  (define (overline-warning column)
+    (typst-diagnostic 'warning
+                      (typst-location #f "notes/002c.typ" 40 column)
+                      "overline was ignored during MathML export"))
+  (define bundle-warning
+    (typst-diagnostic 'warning #f "bundle export is experimental"))
+  (define typst-warnings
+    (list bundle-warning (overline-warning 23) (overline-warning 48)))
+  (define typst-error
+    (list (typst-diagnostic 'error
+                            (typst-location #f "notes/002c.typ" 47 1)
+                            "unknown variable: nope")
+          bundle-warning))
+  (define typst-package-error
+    (list (typst-diagnostic
+           'error
+           (typst-location "@local/demo:0.1.0" "lib.typ" 5 12)
+           "panicked with: (\n  alpha: \"a\",\n  gamma: (1, 2, 3),\n)")
+          (typst-diagnostic 'warning
+                            (typst-location #f "main.typ" 1 16)
+                            "unknown font family: no such font")))
+  (define typst-missing-input
+    (list (typst-diagnostic 'error
+                            #f
+                            "input file not found (searched at site.typ)")))
 
   (define agda-annotate-error #<<END
 Checking Algebra.Definitions (/notes/subtrees/barb/source/Algebra/Definitions.lagda.typ).
@@ -676,74 +816,120 @@ END
     (timed-result (agda-annotate-result #t "") 0.0 2100.0))
   (define typst-succeeded
     (timed-result (typst-result
-            (typst-dependencies (list (string->path "site.typ"))
-                                (for/list : (Listof Path) ([i (in-range 465)])
-                                  (build-path ".arb/staging"
-                                              (format "~a.html" i))))
-            typst-warnings)
-           2100.0
-           4700.0))
+                   (typst-dependencies (list (string->path "site.typ"))
+                                       (for/list : (Listof Path)
+                                                 ([i (in-range 465)])
+                                         (build-path ".arb/staging"
+                                                     (format "~a.html" i))))
+                   typst-warnings)
+                  2100.0
+                  4700.0))
 
-  (test-case "a successful build prints three steps and Typst's warnings"
+  (test-case "a successful build prints three steps and no ignored warning"
     (check-equal?
      (printed (build-result agda-annotate-succeeded
                             typst-succeeded
-                            (timed-result (pagefind-result #t "Finished in 0.254 seconds\n")
-                                   4700.0
-                                   4900.0)))
+                            (timed-result
+                             (pagefind-result #t "Finished in 0.254 seconds\n")
+                             4700.0
+                             4900.0)))
      (list (string-append "agda-annotate    2.1 s\n"
                           "typst            2.6 s  465 files\n"
                           "pagefind         0.2 s\n")
-           typst-warnings)))
+           "")))
 
   (test-case "a failed agda-annotate prints its output and no later step"
     (check-equal?
      (printed
       (build-result (timed-result (agda-annotate-result #f agda-annotate-error)
-                                   0.0
-                                   100.0)
+                                  0.0
+                                  100.0)
                     #f
                     #f))
      (list "agda-annotate    0.1 s  failed\n"
            agda-annotate-error)))
 
-  (test-case "a compile error prints Typst's diagnostics and no pagefind step"
+  (test-case "a compile error prints Typst's error and no pagefind step"
     (check-equal?
      (printed
       (build-result agda-annotate-succeeded
                     (timed-result (typst-result (typst-dependencies null #f)
                                                 typst-error)
                                   2100.0
-                                   2130.0)
+                                  2130.0)
                     #f))
      (list (string-append "agda-annotate    2.1 s\n"
                           "typst            0.0 s  failed\n")
-           typst-error)))
+           "notes/002c.typ:47:1: error: unknown variable: nope\n")))
+
+  (test-case "diagnostics are printed as Typst prints them"
+    (check-equal?
+     (printed
+      (build-result agda-annotate-succeeded
+                    (timed-result (typst-result (typst-dependencies null #f)
+                                                typst-package-error)
+                                  2100.0
+                                  2130.0)
+                    #f))
+     (list (string-append "agda-annotate    2.1 s\n"
+                          "typst            0.0 s  failed\n")
+           typst-package-error-output)))
 
   (test-case "Typst stopping before it writes dependencies is a failure"
     (check-equal?
      (printed (build-result agda-annotate-succeeded
                             (timed-result (typst-result #f typst-missing-input)
-                                   2100.0
-                                   2130.0)
+                                          2100.0
+                                          2130.0)
                             #f))
      (list (string-append "agda-annotate    2.1 s\n"
                           "typst            0.0 s  failed\n")
-           typst-missing-input)))
+           typst-missing-input-output)))
 
-  (test-case "a failed pagefind prints its output after Typst's warnings"
+  (test-case "a failed pagefind prints its output"
     (check-equal?
      (printed (build-result agda-annotate-succeeded
                             typst-succeeded
                             (timed-result (pagefind-result #f pagefind-error)
-                                   4700.0
-                                   4900.0)))
+                                          4700.0
+                                          4900.0)))
      (list (string-append "agda-annotate    2.1 s\n"
                           "typst            2.6 s  465 files\n"
                           "pagefind         0.2 s  failed\n")
-           (string-append typst-warnings pagefind-error))))
+           pagefind-error)))
 
-  (: parsed (-> Bytes (List Boolean String Bytes)))
+  (test-case "diagnostics have an optional location, a severity and a message"
+    (check-equal? (parse-typst-diagnostics "") null)
+    (check-equal? (parse-typst-diagnostics typst-warnings-output)
+                  typst-warnings)
+    (check-equal? (parse-typst-diagnostics typst-error-output) typst-error)
+    (check-equal? (parse-typst-diagnostics typst-missing-input-output)
+                  typst-missing-input))
+
+  (test-case "a package's path has a colon, and a message can span lines"
+    (check-equal? (parse-typst-diagnostics typst-package-error-output)
+                  typst-package-error))
+
+  (test-case "diagnostics of any other shape are an error"
+    (check-exn exn:fail?
+               (thunk (parse-typst-diagnostics "  alpha: \"a\",\n")))
+    (check-exn exn:fail?
+               (thunk (parse-typst-diagnostics "note: something else\n")))
+    (check-exn exn:fail?
+               (thunk (parse-typst-diagnostics
+                       "@local/demo:0.1/lib.typ:5:12: error: no patch\n")))
+    (check-exn exn:fail?
+               (thunk (parse-typst-diagnostics
+                       "a directory: with a colon/a.typ:1:1: error: nope\n")))
+    (check-exn exn:fail?
+               (thunk (parse-typst-diagnostics
+                       "warning: bundle export is experimental")))
+    (check-exn exn:fail?
+               (thunk (parse-typst-diagnostics
+                       (string-append typst-warnings-output
+                                      typst-error-output)))))
+
+  (: parsed (-> Bytes (List Boolean (Listof typst-diagnostic) Bytes)))
   (define (parsed output)
     (define-values (succeeded? diagnostics rest)
       (parse-typst-watch-iteration output))
@@ -758,22 +944,21 @@ END
                   #"\n"))
 
   (define compiling (status #"compiling ..."))
+  (define successfully (status #"compiled successfully in 310.5 ms"))
   (define with-warnings
     (bytes-append compiling
                   (status #"compiled with warnings in 2.61 s")
-                  (string->bytes/utf-8 typst-warnings)))
+                  (string->bytes/utf-8 typst-warnings-output)))
   (define with-errors
     (bytes-append compiling
                   (status #"compiled with errors")
-                  (string->bytes/utf-8 typst-error)))
+                  (string->bytes/utf-8 typst-error-output)))
 
   (test-case "an iteration's diagnostics are what follows its two statuses"
     (check-equal? (parsed with-warnings) (list #t typst-warnings #""))
     (check-equal? (parsed with-errors) (list #f typst-error #""))
-    (check-equal? (parsed (bytes-append
-                           compiling
-                           (status #"compiled successfully in 310.5 ms")))
-                  (list #t "" #"")))
+    (check-equal? (parsed (bytes-append compiling successfully))
+                  (list #t null #"")))
 
   (test-case "the next iteration's output is left over, however much has arrived"
     (check-equal? (parsed (bytes-append with-warnings #"watching"))
@@ -789,8 +974,29 @@ END
     (check-exn exn:fail?
                (thunk (parsed (bytes-append
                                (status #"compiled with errors")
-                               (string->bytes/utf-8 typst-missing-input)))))
+                               (string->bytes/utf-8 typst-error-output)))))
     (check-exn exn:fail?
                (thunk (parsed (bytes-append
                                compiling
-                               (status #"something else")))))))
+                               (status #"something else"))))))
+
+  (test-case "a result status that disagrees with the diagnostics is an error"
+    (check-exn exn:fail?
+               (thunk (parsed (bytes-append
+                               compiling
+                               successfully
+                               (string->bytes/utf-8 typst-warnings-output)))))
+    (check-exn exn:fail?
+               (thunk (parsed (bytes-append
+                               compiling
+                               (status #"compiled with warnings in 2.61 s")))))
+    (check-exn exn:fail?
+               (thunk (parsed (bytes-append
+                               compiling
+                               (status #"compiled with warnings in 2.61 s")
+                               (string->bytes/utf-8 typst-error-output)))))
+    (check-exn exn:fail?
+               (thunk (parsed (bytes-append
+                               compiling
+                               (status #"compiled with errors")
+                               (string->bytes/utf-8 typst-warnings-output)))))))
