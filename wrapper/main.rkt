@@ -94,16 +94,6 @@
 
 ;; Build and watch implementations
 
-;; A value together with the times at which computing it started and ended, in
-;; milliseconds as `current-inexact-milliseconds` gives them.
-(struct (a) timed-result ([value : a] [start : Flonum] [end : Flonum]))
-
-(: call-timed (All (a) (-> (-> a) (timed-result a))))
-(define (call-timed thunk)
-  (define start (current-inexact-milliseconds))
-  (define value (thunk))
-  (timed-result value start (current-inexact-milliseconds)))
-
 (define staging-directory ".arb/staging")
 
 ;; If a step fails the subsequent steps will be `#f`.
@@ -211,7 +201,8 @@
 (: handle-watch (-> Void))
 (define (handle-watch)
   (define root (find-project-root (current-directory)))
-  (define sources (source-paths root (read-manifest root)))
+  (define globs (read-manifest root))
+  (define sources (source-paths root globs))
   (parameterize ([current-directory root])
     ;; If the input file is missing, Typst will print an error and wait for the
     ;; file to appear. In this case it will not print the "compiling ..." status
@@ -239,7 +230,10 @@
                                        "site.typ"
                                        staging-directory
                                        dependencies-path))))
-         (let loop : Void ()
+         (let loop : Void ([sources : (Listof Path) sources]
+                           [changes : (Listof Filesystem-Change)
+                                    (watch-source-directories root globs)]
+                           [compiled? : Boolean #f])
            (sync (handle-evt iterations
                              (λ ([typst : (timed-result typst-result)])
                                (define dependencies
@@ -255,7 +249,16 @@
                                (print-watch-result (watch-result typst pagefind))
                                (unless dependencies
                                  (raise-user-error 'arb "typst exited"))
-                               (loop)))
+                               (loop sources changes #t)))
+                 (handle-evt (if compiled? (apply choice-evt changes) never-evt)
+                             (λ (_)
+                               (for-each filesystem-change-evt-cancel changes)
+                               (define watched
+                                 (watch-source-directories root globs))
+                               (define matched (source-paths root globs))
+                               (unless (equal? matched sources)
+                                 (write-sources matched ".arb/sources.txt"))
+                               (loop matched watched #t)))
                  ;; An error in a thread ends only that thread.
                  (handle-evt reader
                              (λ (_)
@@ -769,6 +772,23 @@
 (define (write-sources sources path)
   (display-lines-to-file (map path->string sources) path #:exists 'truncate))
 
+(define-type Filesystem-Change (Rec x (Evtof x)))
+
+(: watch-source-directories (-> Path (Listof String) (Listof Filesystem-Change)))
+(define (watch-source-directories root globs)
+  (define bases
+    (remove-duplicates
+     (map (λ ([glob : String]) (glob-directory root glob)) globs)))
+  (for*/list : (Listof Filesystem-Change)
+             ([base (in-list bases)]
+              #:when (directory-exists? base)
+              [directory (in-list (find-files directory-exists? base))]
+              [change (in-value
+                       (with-handlers ([exn:fail:filesystem? (const #f)])
+                         (filesystem-change-evt directory)))]
+              #:when change)
+    change))
+
 ;; Helpers
 
 ;; Walk up the directory tree looking for the first arb.toml manifest file.
@@ -781,6 +801,24 @@
     [else (raise-user-error 'arb
                             "no ~a in this directory or above it"
                             manifest-name)]))
+
+;; A value together with the times at which computing it started and ended, in
+;; milliseconds as `current-inexact-milliseconds` gives them.
+(struct (a) timed-result ([value : a] [start : Flonum] [end : Flonum]))
+
+(: call-timed (All (a) (-> (-> a) (timed-result a))))
+(define (call-timed thunk)
+  (define start (current-inexact-milliseconds))
+  (define value (thunk))
+  (timed-result value start (current-inexact-milliseconds)))
+
+(: glob-directory (-> Path String Path))
+(define (glob-directory root glob)
+  (apply build-path
+         root
+         (takef (string-split glob "/")
+                (λ ([name : String])
+                  (not (regexp-match? #rx"[*?{[]" name))))))
 
 ;; Tests
 
