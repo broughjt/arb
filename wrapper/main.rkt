@@ -13,7 +13,11 @@
          typed/file/glob
          typed/json)
 
-(require/typed racket/base [path<? (-> Path Path Boolean)])
+(require/typed racket/base
+               [path<? (-> Path Path Boolean)]
+               [(subprocess subprocess/merged)
+                (-> #f #f 'stdout Path Path-String *
+                    (Values Subprocess Input-Port Output-Port #f))])
 (require/typed toml [parse-toml (-> String (HashTable Symbol Any))])
 
 (module fifo racket/base
@@ -172,65 +176,46 @@
   (define root (find-project-root (current-directory)))
   (define sources (source-paths root (read-manifest root)))
   (parameterize ([current-directory root])
+    ;; If the input file is missing, Typst will print an error and wait for the
+    ;; file to appear. In this case it will not print the "compiling ..." status
+    ;; line our framing code below relies on, so we ensure here that the input
+    ;; file exists.
+    (unless (file-exists? "site.typ")
+      (raise-user-error 'arb "no site.typ in ~a" root))
     (make-directory* ".arb")
     (write-sources sources ".arb/sources.txt")
     (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
 
-    ;; The `--deps` Typst option causes it to write the compilation dependencies
-    ;; to a file. We use this to detect compilation iterations during `typst
-    ;; watch`, since parsing its terminal output (on stderr) for this
-    ;; information is quite tricky. Typst writes these dependencies during
-    ;; `compile_once` that is called in the body of the main watch loop, after
-    ;; the outputs and diagnostics have been written (See
-    ;; crates/typst-cli/src/watch.rs).
-    ;;
-    ;; For each compilation iteration in watch, Typst opens the path again with
-    ;; `File::create` (which truncates if the file already exists), writes the
-    ;; dependencies as a JSON object, and closes it. We use a FIFO to avoid the
-    ;; dependencies of previous iterations getting overwritten by subsequent
-    ;; ones. With a FIFO, the truncation does nothing, the writes queue up in
-    ;; order, the port becomes ready when data arrives, and if we fall behind in
-    ;; reading, Typst's writes block for us to catch up.
-    ;;
-    ;; Once the last writer of a FIFO closes, the reader gets EOF. We open the
-    ;; file for writing ourselves to avoid this. We make use of the fact that
-    ;; JSON objects are prefix-free, so we can delimit them without needing to
-    ;; wait for EOFs.
     (define dependencies-path ".arb/deps")
-    (delete-directory/files dependencies-path #:must-exist? #f)
-    (make-fifo dependencies-path)
-    (define dependencies-port (open-input-file dependencies-path))
-    (define dependencies-writer
-      (open-output-file dependencies-path #:exists 'append))
-    (define-values (typst _output _input _error)
-      (apply subprocess
-             (current-output-port)
-             (current-input-port)
-             (current-error-port)
-             (force typst-executable)
-             (typst-arguments (typst-input 'watch
-                                           "site.typ"
-                                           ".arb/staging"
-                                           dependencies-path))))
-
-    ;; An interrupt from the terminal reaches Typst too, and ends the watch.
+    (define custodian (make-custodian))
     (with-handlers ([exn:break? void])
       (dynamic-wind
        void
        (thunk
+         (define-values (reader iterations)
+           (parameterize ([current-custodian custodian]
+                          [current-subprocess-custodian-mode 'kill])
+             (watch-typst (typst-input 'watch
+                                       "site.typ"
+                                       ".arb/staging"
+                                       dependencies-path))))
          (let loop : Void ()
-           (sync (handle-evt dependencies-port
-                             (λ (_)
-                               (read-typst-dependencies dependencies-port)
+           (sync (handle-evt iterations
+                             (λ ([result : (timed-result typst-result)])
+                               (print-typst-result result)
+                               (unless (typst-result-dependencies
+                                        (timed-result-value result))
+                                 (raise-user-error 'arb "typst exited"))
                                (loop)))
-                 (handle-evt typst
+                 ;; An error in a thread ends only that thread.
+                 (handle-evt reader
                              (λ (_)
-                               (raise-user-error 'arb "typst exited"))))))
+                               (raise-user-error
+                                'arb
+                                "stopped reading Typst's output"))))))
        (thunk
-         (subprocess-kill typst #t)
-         (close-output-port dependencies-writer)
-         (close-input-port dependencies-port)
-         (delete-file dependencies-path))))))
+         (custodian-shutdown-all custodian)
+         (delete-directory/files dependencies-path #:must-exist? #f))))))
 
 ;; Report formatting
 
@@ -378,6 +363,154 @@
   (typst-dependencies (parse-paths (hash-ref table 'inputs invalid))
                       (and (not (eq? outputs 'null))
                            (parse-paths outputs))))
+
+;; The `--deps` Typst option causes it to write the compilation dependencies
+;; to a file. We use this to detect compilation iterations during `typst
+;; watch`. Typst writes these dependencies during `compile_once` that is called
+;; in the body of the main watch loop, after the outputs and diagnostics have
+;; been written (See crates/typst-cli/src/watch.rs).
+;;
+;; For each compilation iteration in watch, Typst opens the path again with
+;; `File::create` (which truncates if the file already exists), writes the
+;; dependencies as a JSON object, and closes it. We use a FIFO to avoid the
+;; dependencies of previous iterations getting overwritten by subsequent
+;; ones. With a FIFO, the truncation does nothing, the writes queue up in
+;; order, the port becomes ready when data arrives, and if we fall behind in
+;; reading, Typst's writes block for us to catch up.
+;;
+;; Once the last writer of a FIFO closes, the reader gets EOF. We open the
+;; file for writing ourselves to avoid this. We make use of the fact that
+;; JSON objects are prefix-free, so we can delimit them without needing to
+;; wait for EOFs.
+(: watch-typst (-> typst-input
+                   (Values Thread (Channelof (timed-result typst-result)))))
+(define (watch-typst input)
+  (define dependencies-path (typst-input-dependencies input))
+  (delete-directory/files dependencies-path #:must-exist? #f)
+  (make-fifo dependencies-path)
+  (define dependencies-port (open-input-file dependencies-path))
+  (define _dependencies-writer
+    (open-output-file dependencies-path #:exists 'append))
+  (define-values (_typst typst-output typst-standard-input _error)
+    (apply subprocess/merged
+           #f
+           #f
+           'stdout
+           (force typst-executable)
+           (typst-arguments input)))
+  (close-output-port typst-standard-input)
+
+  (define iterations : (Channelof (timed-result typst-result)) (make-channel))
+  (define output (open-output-bytes))
+  ;; Our choice of size here is arbitrary. The `read-output` reads in chunks of
+  ;; `chunk-size` until the pipe is empty.
+  (define chunk-size (make-bytes 4096))
+  ;; The boolean is "is the pipe still open?""
+  (: read-output (-> Boolean))
+  (define (read-output)
+    (define count (read-bytes-avail!* chunk-size typst-output))
+    (cond
+      [(eof-object? count) #f]
+      [(exact-positive-integer? count)
+       (write-bytes chunk-size output 0 count)
+       (read-output)]
+      [else #t]))
+
+  ;; `start` is the time at which the first byte in `output` arrived, or `#f`
+  ;; while `output` is empty.
+  (define reader
+    (thread
+     (thunk
+       (let loop : Void ([start : (U Flonum #f) #f])
+         (sync
+          (handle-evt
+           typst-output
+           (λ (_)
+             (define now (current-inexact-milliseconds))
+             (if (read-output)
+                 (loop (or start now))
+                 (channel-put
+                  iterations
+                  (timed-result
+                   (typst-result #f
+                                 (bytes->string/utf-8 (get-output-bytes output)
+                                                      #\uFFFD))
+                   (or start now)
+                   now)))))
+          (handle-evt
+           dependencies-port
+           (λ (_)
+             (define dependencies (read-typst-dependencies dependencies-port))
+             (define end (current-inexact-milliseconds))
+             (read-output)
+             (define read (get-output-bytes output #t))
+             (define-values (succeeded? diagnostics rest)
+               (parse-typst-watch-iteration read))
+             (unless (eq? succeeded?
+                          (and (typst-dependencies-outputs dependencies) #t))
+               (error 'arb
+                      "Typst's status and its dependencies disagree: ~e"
+                      read))
+             (write-bytes rest output)
+             (channel-put iterations
+                          (timed-result (typst-result dependencies diagnostics)
+                                        (or start end)
+                                        end))
+             (loop (and (not (bytes=? rest #"")) end)))))))))
+  (values reader iterations))
+
+;; In watch mode Typst prints a status when an iteration begins and another
+;; when the compile has ended, each in this form, and then the diagnostics. See
+;; `Status::print` in Typst's crates/typst-cli/src/watch.rs.
+;;
+;;   watching site.typ
+;;   writing to .arb/staging
+;;
+;;   [12:00:00] compiled with warnings in 2.61 s
+;;
+(define typst-watch-status-pattern
+  (byte-pregexp
+   (bytes-append #"^watching [^\n]*\n"
+                 #"writing to [^\n]*\n"
+                 #"\n"
+                 #"\\[\\d\\d:\\d\\d:\\d\\d\\] ([^\n]*)\n"
+                 #"\n")))
+
+;; Takes the oldest iteration off the front of what `typst watch` has printed:
+;; whether its compile succeeded, its diagnostics, and the output after it, which
+;; belongs to the next iteration. The output must begin with a "compiling ..."
+;; status and hold the whole iteration, which it does once the iteration's
+;; dependencies have arrived. The iteration ends where the next status begins.
+;; Typst prints a status in several writes, of which the first is "watching", so
+;; the output can end partway through one.
+(: parse-typst-watch-iteration (-> Bytes (Values Boolean String Bytes)))
+(define (parse-typst-watch-iteration output)
+  (: unexpected (-> Nothing))
+  (define (unexpected)
+    (error 'arb "unexpected output from typst watch: ~e" output))
+  (: parse-status (-> Bytes (Values Bytes Bytes)))
+  (define (parse-status text)
+    (match (regexp-match-positions typst-watch-status-pattern text)
+      [(list (cons _ end) (cons message-start message-end))
+       (values (subbytes text message-start message-end) (subbytes text end))]
+      [_ (unexpected)]))
+  (define-values (compiling after-compiling) (parse-status output))
+  (unless (bytes=? compiling #"compiling ...")
+    (unexpected))
+  (define-values (result after-result) (parse-status after-compiling))
+  (define succeeded?
+    (cond
+      [(regexp-match? #rx#"^compiled (successfully|with warnings) in " result)
+       #t]
+      [(bytes=? result #"compiled with errors") #f]
+      [else (unexpected)]))
+  (define end
+    (match (regexp-match-positions #rx#"(?m:^watching)" after-result)
+      [(list (cons start _)) start]
+      [_ (bytes-length after-result)]))
+  (values succeeded?
+          (bytes->string/utf-8 (subbytes after-result 0 end) #\uFFFD)
+          (subbytes after-result end)))
 
 ;; `pagefind` wrapper
 
@@ -608,4 +741,56 @@ END
      (list (string-append "agda-annotate    2.1 s\n"
                           "typst            2.6 s  465 files\n"
                           "pagefind         0.2 s  failed\n")
-           (string-append typst-warnings pagefind-error)))))
+           (string-append typst-warnings pagefind-error))))
+
+  (: parsed (-> Bytes (List Boolean String Bytes)))
+  (define (parsed output)
+    (define-values (succeeded? diagnostics rest)
+      (parse-typst-watch-iteration output))
+    (list succeeded? diagnostics rest))
+
+  (: status (-> Bytes Bytes))
+  (define (status message)
+    (bytes-append #"watching site.typ\n"
+                  #"writing to .arb/staging\n"
+                  #"\n"
+                  #"[12:00:00] " message #"\n"
+                  #"\n"))
+
+  (define compiling (status #"compiling ..."))
+  (define with-warnings
+    (bytes-append compiling
+                  (status #"compiled with warnings in 2.61 s")
+                  (string->bytes/utf-8 typst-warnings)))
+  (define with-errors
+    (bytes-append compiling
+                  (status #"compiled with errors")
+                  (string->bytes/utf-8 typst-error)))
+
+  (test-case "an iteration's diagnostics are what follows its two statuses"
+    (check-equal? (parsed with-warnings) (list #t typst-warnings #""))
+    (check-equal? (parsed with-errors) (list #f typst-error #""))
+    (check-equal? (parsed (bytes-append
+                           compiling
+                           (status #"compiled successfully in 310.5 ms")))
+                  (list #t "" #"")))
+
+  (test-case "the next iteration's output is left over, however much has arrived"
+    (check-equal? (parsed (bytes-append with-warnings #"watching"))
+                  (list #t typst-warnings #"watching"))
+    (check-equal? (parsed (bytes-append with-warnings compiling))
+                  (list #t typst-warnings compiling))
+    (check-equal? (parsed (bytes-append with-warnings with-errors))
+                  (list #t typst-warnings with-errors)))
+
+  (test-case "output that does not begin with a compiling status is an error"
+    (check-exn exn:fail? (thunk (parsed #"")))
+    (check-exn exn:fail? (thunk (parsed compiling)))
+    (check-exn exn:fail?
+               (thunk (parsed (bytes-append
+                               (status #"compiled with errors")
+                               (string->bytes/utf-8 typst-missing-input)))))
+    (check-exn exn:fail?
+               (thunk (parsed (bytes-append
+                               compiling
+                               (status #"something else")))))))
