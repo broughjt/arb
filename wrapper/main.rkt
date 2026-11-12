@@ -15,6 +15,8 @@
          typed/json)
 
 (require/typed racket/base
+               [file-or-directory-stat
+                (-> Path-String (HashTable Symbol Integer))]
                [path<? (-> Path Path Boolean)]
                [(subprocess subprocess/merged)
                 (-> #f #f 'stdout Path Path-String *
@@ -139,7 +141,7 @@
          (run-agda-annotate
           (agda-annotate-input
            ".arb"
-           (filter (curryr path-has-extension? #".lagda.typ") sources))))))
+           (agda-sources sources))))))
     (define typst
       (and (agda-annotate-result-succeeded? (timed-result-value agda-annotate))
            (call-timed
@@ -194,6 +196,18 @@
   (define pagefind (build-result-pagefind result))
   (and pagefind (pagefind-result-succeeded? (timed-result-value pagefind))))
 
+(: install-agda-annotations (-> agda-annotate-result Void))
+(define (install-agda-annotations result)
+  (delete-directory/files ".arb/types" #:must-exist? #f)
+  (cond
+    [(agda-annotate-result-succeeded? result)
+     (rename-file-or-directory ".arb/agda/types" ".arb/types")
+     (display-to-file (file->bytes ".arb/agda/agda-annotations.json")
+                      ".arb/agda-annotations.json"
+                      #:exists 'truncate)]
+    [else
+     (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)]))
+
 ;; If the compile failed the pagefind step will be `#f`.
 (struct watch-result ([typst : (timed-result typst-result)]
                       [pagefind : (U (timed-result pagefind-result) #f)]))
@@ -216,9 +230,28 @@
       (raise-user-error 'arb "another build or watch is running in ~a" root))
     (write-sources sources ".arb/sources.txt")
     (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
+    (delete-directory/files ".arb/types" #:must-exist? #f)
 
     (define dependencies-path ".arb/deps")
     (define custodian (make-custodian))
+    ;; Forced here because an error in a thread ends only that thread.
+    (define _agda-annotate-executable (force agda-annotate-executable))
+    (define annotations : (Channelof (timed-result agda-annotate-result))
+      (make-channel))
+    (: start-agda-annotate (-> (Listof Path) Void))
+    (define (start-agda-annotate sources)
+      (delete-directory/files ".arb/agda" #:must-exist? #f)
+      (parameterize ([current-custodian custodian]
+                     [current-subprocess-custodian-mode 'kill])
+        (thread
+         (thunk
+           (channel-put annotations
+                        (call-timed
+                         (thunk
+                           (run-agda-annotate
+                            (agda-annotate-input ".arb/agda"
+                                                 (agda-sources sources)))))))))
+      (void))
     (with-handlers ([exn:break? void])
       (dynamic-wind
        void
@@ -230,10 +263,22 @@
                                        "site.typ"
                                        staging-directory
                                        dependencies-path))))
+         (start-agda-annotate sources)
+         ;; `modified` is the modification times of the Agda sources when
+         ;; agda-annotate was last started. One run happens at a time, and a
+         ;; change during a run queues one more. Nothing is written for Typst
+         ;; to read until its first result has arrived, since it watches no
+         ;; file before that.
          (let loop : Void ([sources : (Listof Path) sources]
                            [changes : (Listof Filesystem-Change)
                                     (watch-source-directories root globs)]
-                           [compiled? : Boolean #f])
+                           [compiled? : Boolean #f]
+                           [agda : (U 'idle 'running 'queued) 'running]
+                           [modified : (Listof Integer)
+                                     (for/list : (Listof Integer)
+                                               ([path (agda-sources sources)])
+                                       (hash-ref (file-or-directory-stat path)
+                                                 'modify-time-nanoseconds))])
            (sync (handle-evt iterations
                              (λ ([typst : (timed-result typst-result)])
                                (define dependencies
@@ -245,11 +290,15 @@
                                (define pagefind
                                  (and outputs
                                       (call-timed
-                                       (thunk (publish outputs #f)))))
+                                       (thunk
+                                         (publish
+                                          outputs
+                                          (and (directory-exists? ".arb/types")
+                                               ".arb/types"))))))
                                (print-watch-result (watch-result typst pagefind))
                                (unless dependencies
                                  (raise-user-error 'arb "typst exited"))
-                               (loop sources changes #t)))
+                               (loop sources changes #t agda modified)))
                  (handle-evt (if compiled? (apply choice-evt changes) never-evt)
                              (λ (_)
                                (for-each filesystem-change-evt-cancel changes)
@@ -258,7 +307,31 @@
                                (define matched (source-paths root globs))
                                (unless (equal? matched sources)
                                  (write-sources matched ".arb/sources.txt"))
-                               (loop matched watched #t)))
+                               (define times
+                                 (for/list : (Listof Integer)
+                                           ([path (agda-sources matched)])
+                                   (hash-ref (file-or-directory-stat path)
+                                             'modify-time-nanoseconds)))
+                               (cond
+                                 [(equal? times modified)
+                                  (loop matched watched #t agda modified)]
+                                 [(eq? agda 'idle)
+                                  (start-agda-annotate matched)
+                                  (loop matched watched #t 'running times)]
+                                 [else
+                                  (loop matched watched #t 'queued times)])))
+                 (handle-evt (if compiled? annotations never-evt)
+                             (λ ([agda-annotate
+                                  : (timed-result agda-annotate-result)])
+                               (install-agda-annotations
+                                (timed-result-value agda-annotate))
+                               (print-agda-annotate-result agda-annotate)
+                               (cond
+                                 [(eq? agda 'queued)
+                                  (start-agda-annotate sources)
+                                  (loop sources changes #t 'running modified)]
+                                 [else
+                                  (loop sources changes #t 'idle modified)])))
                  ;; An error in a thread ends only that thread.
                  (handle-evt reader
                              (λ (_)
@@ -771,6 +844,10 @@
 (: write-sources (-> (Listof Path) Path-String Void))
 (define (write-sources sources path)
   (display-lines-to-file (map path->string sources) path #:exists 'truncate))
+
+(: agda-sources (-> (Listof Path) (Listof Path)))
+(define (agda-sources sources)
+  (filter (curryr path-has-extension? #".lagda.typ") sources))
 
 (define-type Filesystem-Change (Rec x (Evtof x)))
 
