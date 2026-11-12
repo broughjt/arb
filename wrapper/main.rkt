@@ -127,14 +127,21 @@
 ;; directory inside `.arb/` and then rename it to `build/` at the end, so a
 ;; failed build leaves the previous one alone and no stale pages survive.
 ;;
-;; TODO: Two builds at once in one checkout trample `.arb/`. Revisit whether
-;; to take a lock per checkout when adding watch.
+;; Two of `build` and `watch` at once in one checkout would trample `.arb/`, so
+;; each holds an exclusive lock on `.arb/lock` and fails if it is taken. That
+;; is why `.arb/` itself is never deleted.
 (: build (-> Path build-result))
 (define (build root)
   (define sources (source-paths root (read-manifest root)))
   (parameterize ([current-directory root])
-    (delete-directory/files ".arb" #:must-exist? #f)
-    (make-directory ".arb")
+    (make-directory* ".arb")
+    (define lock (open-output-file ".arb/lock" #:exists 'append))
+    (unless (port-try-file-lock? lock 'exclusive)
+      (raise-user-error 'arb "another build or watch is running in ~a" root))
+    (delete-directory/files ".arb/staging" #:must-exist? #f)
+    (delete-directory/files ".arb/types" #:must-exist? #f)
+    ;; A watch that was killed leaves its FIFO here, which Typst would block on.
+    (delete-directory/files ".arb/deps" #:must-exist? #f)
     (write-sources sources ".arb/sources.txt")
     (define agda-annotate
       (call-timed
@@ -165,6 +172,7 @@
     (when (build-succeeded? result)
       (delete-directory/files "build" #:must-exist? #f)
       (rename-file-or-directory ".arb/staging" "build"))
+    (close-output-port lock)
     result))
 
 (: build-succeeded? (-> build-result Boolean))
@@ -184,6 +192,9 @@
     (unless (file-exists? "site.typ")
       (raise-user-error 'arb "no site.typ in ~a" root))
     (make-directory* ".arb")
+    (define lock (open-output-file ".arb/lock" #:exists 'append))
+    (unless (port-try-file-lock? lock 'exclusive)
+      (raise-user-error 'arb "another build or watch is running in ~a" root))
     (write-sources sources ".arb/sources.txt")
     (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)
 
@@ -216,7 +227,8 @@
                                 "stopped reading Typst's output"))))))
        (thunk
          (custodian-shutdown-all custodian)
-         (delete-directory/files dependencies-path #:must-exist? #f))))))
+         (delete-directory/files dependencies-path #:must-exist? #f)
+         (close-output-port lock))))))
 
 ;; Report formatting
 
