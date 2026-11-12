@@ -11,8 +11,12 @@
          racket/promise
          racket/string
          racket/system
+         racket/tcp
          typed/file/glob
-         typed/json)
+         typed/json
+         typed/net/url
+         typed/racket/async-channel
+         typed/web-server/http)
 
 (require/typed racket/base
                [file-or-directory-stat
@@ -22,6 +26,30 @@
                 (-> #f #f 'stdout Path Path-String *
                     (Values Subprocess Input-Port Output-Port #f))])
 (require/typed toml [parse-toml (-> String (HashTable Symbol Any))])
+
+(require/typed web-server/private/connection-manager
+               [#:opaque Connection connection?])
+(define-type Dispatcher (-> Connection Request Any))
+(define-type URL->Path (-> URL (Values Path (Listof Any))))
+(require/typed web-server/web-server
+               [serve (-> #:dispatch Dispatcher
+                          #:listen-ip String
+                          #:port Integer
+                          #:confirmation-channel (Async-Channelof Any)
+                          (-> Void))])
+(require/typed web-server/dispatchers/dispatch
+               [next-dispatcher (-> Nothing)])
+(require/typed web-server/dispatchers/dispatch-sequencer
+               [(make sequencer:make) (-> Dispatcher * Dispatcher)])
+(require/typed web-server/dispatchers/dispatch-lift
+               [(make lift:make) (-> (-> Request Response) Dispatcher)])
+(require/typed web-server/dispatchers/dispatch-files
+               [(make files:make)
+                (-> #:url->path URL->Path
+                    #:path->mime-type (-> Path (U Bytes #f))
+                    Dispatcher)])
+(require/typed web-server/dispatchers/filesystem-map
+               [make-url->path (-> Path URL->Path)])
 
 (module fifo racket/base
   (require ffi/unsafe)
@@ -208,6 +236,74 @@
     [else
      (display-to-file "{}" ".arb/agda-annotations.json" #:exists 'truncate)]))
 
+;; The server serves `build/` on the first free port from 3000 to 3005. A
+;; request for `/__events` is a stream of server-sent events: its connection
+;; thread puts itself on `subscriptions`, and then writes a message whenever its
+;; mailbox receives one. The watch loop sends to each subscriber after each
+;; publish, and drops a subscriber whose thread has ended. A thread ends when a
+;; write fails, so a closed tab is dropped a write or two after it closes. The
+;; comment every 25 seconds keeps the web server from closing an idle stream
+;; after 60 seconds.
+(: serve-build (-> Path (Channelof Thread) Integer))
+(define (serve-build root subscriptions)
+  (define events
+    (lift:make
+     (λ (request)
+       (unless (equal? (map path/param-path (url-path (request-uri request)))
+                       '("__events"))
+         (next-dispatcher))
+       (response/output
+        #:mime-type #"text/event-stream"
+        #:headers (list (make-header #"Cache-Control" #"no-cache"))
+        (λ ([out : Output-Port])
+          (channel-put subscriptions (current-thread))
+          (let loop : Void ()
+            (write-string (if (sync/timeout 25 (thread-receive-evt))
+                              (begin (thread-receive) "data: reload\n\n")
+                              ": keepalive\n\n")
+                          out)
+            (flush-output out)
+            (loop)))))))
+  (define files
+    (files:make #:url->path (make-url->path (build-path root "build"))
+                #:path->mime-type
+                (λ ([path : Path])
+                  (define extension (path-get-extension path))
+                  (and extension (hash-ref mime-types extension #f)))))
+  (define not-found
+    (lift:make (λ (_) (response/output #:code 404 void))))
+  (define dispatcher (sequencer:make events files not-found))
+  ;; `serve` listens in a thread of its own, which prints its error if the port
+  ;; is taken, so we find a free port first. Another program can take it in
+  ;; between, and then `serve` fails.
+  (define port
+    (findf (λ ([port : Integer])
+             (with-handlers ([exn:fail:network? (λ (_) #f)])
+               (tcp-close (tcp-listen port 4 #t "127.0.0.1"))
+               #t))
+           (range 3000 3006)))
+  (unless port
+    (raise-user-error 'arb "no free port from 3000 to 3005"))
+  (define confirmation : (Async-Channelof Any) (make-async-channel))
+  (serve #:dispatch dispatcher
+         #:listen-ip "127.0.0.1"
+         #:port port
+         #:confirmation-channel confirmation)
+  (define result (async-channel-get confirmation))
+  (when (exn? result)
+    (raise result))
+  port)
+
+(define mime-types : (HashTable Bytes Bytes)
+  #hash((#".html" . #"text/html; charset=utf-8")
+        (#".css" . #"text/css")
+        (#".js" . #"text/javascript")
+        (#".json" . #"application/json")
+        (#".wasm" . #"application/wasm")
+        (#".ttf" . #"font/ttf")
+        (#".otf" . #"font/otf")
+        (#".woff2" . #"font/woff2")))
+
 ;; If the compile failed the pagefind step will be `#f`.
 (struct watch-result ([typst : (timed-result typst-result)]
                       [pagefind : (U (timed-result pagefind-result) #f)]))
@@ -263,6 +359,11 @@
                                        "site.typ"
                                        staging-directory
                                        dependencies-path))))
+         (define subscriptions : (Channelof Thread) (make-channel))
+         (define port
+           (parameterize ([current-custodian custodian])
+             (serve-build root subscriptions)))
+         (printf "serving at http://127.0.0.1:~a\n" port)
          (start-agda-annotate sources)
          ;; `modified` is the modification times of the Agda sources when
          ;; agda-annotate was last started. One run happens at a time, and a
@@ -274,6 +375,7 @@
                                     (watch-source-directories root globs)]
                            [compiled? : Boolean #f]
                            [agda : (U 'idle 'running 'queued) 'running]
+                           [subscribers : (Listof Thread) '()]
                            [modified : (Listof Integer)
                                      (for/list : (Listof Integer)
                                                ([path (agda-sources sources)])
@@ -298,7 +400,20 @@
                                (print-watch-result (watch-result typst pagefind))
                                (unless dependencies
                                  (raise-user-error 'arb "typst exited"))
-                               (loop sources changes #t agda modified)))
+                               (loop sources
+                                     changes
+                                     #t
+                                     agda
+                                     (if (and pagefind
+                                              (pagefind-result-succeeded?
+                                               (timed-result-value pagefind)))
+                                         (filter (λ ([subscriber : Thread])
+                                                   (thread-send subscriber
+                                                                'reload
+                                                                #f))
+                                                 subscribers)
+                                         subscribers)
+                                     modified)))
                  (handle-evt (if compiled? (apply choice-evt changes) never-evt)
                              (λ (_)
                                (for-each filesystem-change-evt-cancel changes)
@@ -314,12 +429,27 @@
                                              'modify-time-nanoseconds)))
                                (cond
                                  [(equal? times modified)
-                                  (loop matched watched #t agda modified)]
+                                  (loop matched
+                                        watched
+                                        #t
+                                        agda
+                                        subscribers
+                                        modified)]
                                  [(eq? agda 'idle)
                                   (start-agda-annotate matched)
-                                  (loop matched watched #t 'running times)]
+                                  (loop matched
+                                        watched
+                                        #t
+                                        'running
+                                        subscribers
+                                        times)]
                                  [else
-                                  (loop matched watched #t 'queued times)])))
+                                  (loop matched
+                                        watched
+                                        #t
+                                        'queued
+                                        subscribers
+                                        times)])))
                  (handle-evt (if compiled? annotations never-evt)
                              (λ ([agda-annotate
                                   : (timed-result agda-annotate-result)])
@@ -329,9 +459,27 @@
                                (cond
                                  [(eq? agda 'queued)
                                   (start-agda-annotate sources)
-                                  (loop sources changes #t 'running modified)]
+                                  (loop sources
+                                        changes
+                                        #t
+                                        'running
+                                        subscribers
+                                        modified)]
                                  [else
-                                  (loop sources changes #t 'idle modified)])))
+                                  (loop sources
+                                        changes
+                                        #t
+                                        'idle
+                                        subscribers
+                                        modified)])))
+                 (handle-evt subscriptions
+                             (λ ([subscriber : Thread])
+                               (loop sources
+                                     changes
+                                     compiled?
+                                     agda
+                                     (cons subscriber subscribers)
+                                     modified)))
                  ;; An error in a thread ends only that thread.
                  (handle-evt reader
                              (λ (_)
@@ -469,7 +617,7 @@
     input)
   (append (case command
             [(compile) (list "compile")]
-            [(watch) (list "watch" "--no-serve")])
+            [(watch) (list "watch" "--no-serve" "--input" "dev=true")])
           (list "--root" "."
                 "--features" "bundle,html"
                 "--format" "bundle"

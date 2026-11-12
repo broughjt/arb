@@ -327,6 +327,11 @@
       #html.title(node-title-text(node))
       #html.link(rel: "stylesheet", href: "style.css")
       #html.script(type: "module", src: "main.js")
+      // `arb watch` passes `--input dev=true`, and its server sends a message
+      // on `/__events` after each publish.
+      #if sys.inputs.at("dev", default: none) == "true" {
+        html.script("new EventSource(\"/__events\").onmessage = () => location.reload();")
+      }
     ]
     #html.elem("body", attrs: (
       "data-node-id": id,
