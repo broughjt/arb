@@ -250,9 +250,7 @@ function ensureDialog(): HTMLDialogElement {
         }
         break;
       case "Escape":
-        // Modal dialogs close on Escape natively; handle it explicitly so a
-        // non-modal open (the #search dev affordance) closes too, and so the
-        // browser's "clear the search input" default doesn't win.
+        // Otherwise the search input's own Escape, which clears it, wins.
         event.preventDefault();
         dialog?.close();
         break;
@@ -276,13 +274,10 @@ function ensureDialog(): HTMLDialogElement {
   return dialog;
 }
 
-function open(modal = true): void {
+function open(): void {
   const element = ensureDialog();
   if (element.open) return;
-  // Keyboard opens modal (focus trap + background inerting); #search hash opens
-  // non-modal so loading a shared URL does not trap focus on the page.
-  if (modal) element.showModal();
-  else element.show();
+  element.showModal();
   input.focus();
   void loadPagefind(); // warm the runtime while the user types the first key
 }
@@ -303,8 +298,4 @@ export function initSearch(): void {
       open();
     }
   });
-
-  // Hash affordance: #search opens the palette on load. Keep this non-modal so
-  // following a plain URL fragment does not make the rest of the page inert.
-  if (window.location.hash === "#search") open(false);
 }
