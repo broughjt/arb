@@ -1274,15 +1274,6 @@ a.node-link.node-ref .node-ref-address {
    preview content. Layout rules don't leak in: 03-layout places header and
    mainmatter only via the `article.node >` child combinator. */
 
-:root {
-  /* Behavioral knobs read by assets/popover.ts (unitless numbers; the JS carries
-     matching fallbacks). Kept as custom properties so they stay themeable from
-     CSS. */
-  --popover-show-delay: 200; /* ms of hover intent before the card appears */
-  --popover-hide-delay: 200; /* ms grace before the card hides */
-  --popover-collapse-transclusions: 1; /* 1 = strip [open] from cloned transclusions */
-}
-
 .popover {
   --popover-width: 34rem;
   --popover-max-height: 24rem;
@@ -1467,12 +1458,9 @@ a.node-link.node-ref .node-ref-address {
 
 /* Command-palette search (assets/search.ts). Baseline styling: a centered modal
  * dialog near the top of the viewport, a surface card matching the popover, and
- * result rows that reuse the site's taxon/tag chips. Tunable dimensions are
- * `--search-*` custom properties so the look can be driven from /tuner; the
- * `--search-debounce` knob is unitless and read by the island. */
+ * result rows that reuse the site's taxon/tag chips. */
 
 :root {
-  --search-debounce: 120; /* ms; read by assets/search.ts */
   --search-panel-width: 40rem;
   --search-panel-top: 12vh;
   --search-panel-max-height: 70vh;

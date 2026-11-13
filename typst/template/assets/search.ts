@@ -17,15 +17,6 @@
 const MAX_RESULTS = 12;
 const DEBOUNCE_MS = 120;
 
-/* Tunable knobs as unitless `--search-*` custom properties on :root (defaults in
- * 11-search.css, constants above as fallback), matching the popover island's
- * pattern so they stay themeable from CSS alone and easy to drive from /tuner. */
-function numberProp(name: string, fallback: number): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name);
-  const value = Number.parseFloat(raw);
-  return Number.isFinite(value) ? value : fallback;
-}
-
 // --- pagefind runtime (minimal surface we use) ---------------------------------
 
 interface PagefindFragment {
@@ -196,10 +187,7 @@ async function runSearch(query: string): Promise<void> {
 function onInput(): void {
   window.clearTimeout(debounceTimer);
   const query = input.value.trim();
-  debounceTimer = window.setTimeout(
-    () => void runSearch(query),
-    numberProp("--search-debounce", DEBOUNCE_MS),
-  );
+  debounceTimer = window.setTimeout(() => void runSearch(query), DEBOUNCE_MS);
 }
 
 function ensureDialog(): HTMLDialogElement {

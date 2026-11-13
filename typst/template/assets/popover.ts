@@ -22,15 +22,6 @@ const HIDE_DELAY_MS = 200;
 const VIEWPORT_MARGIN_PX = 12;
 const LINK_GAP_PX = 6;
 
-/* Behavioral knobs are exposed as `--popover-*` custom properties on :root
- * (unitless numbers), with defaults in 10-popover.css and the constants above
- * as fallbacks. This keeps them themeable from CSS alone. */
-function numberProp(name: string, fallback: number): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name);
-  const value = Number.parseFloat(raw);
-  return Number.isFinite(value) ? value : fallback;
-}
-
 const cache = new Map<string, Promise<HTMLElement | null>>();
 
 let popover: HTMLElement | undefined;
@@ -136,13 +127,10 @@ const nodePreviewKind: PreviewKind = {
     const content = await cachedPreview(nodePreviewUrl(trigger));
     if (content === null) return null;
     const shown = content.cloneNode(true) as HTMLElement;
-    // Previews can collapse transclusions regardless of their authored open
-    // state (--popover-collapse-transclusions: 1); the links inside the
-    // summaries still work, so depth is one click away.
-    if (numberProp("--popover-collapse-transclusions", 0) >= 1) {
-      for (const details of shown.querySelectorAll(".transclusion-details[open]")) {
-        details.removeAttribute("open");
-      }
+    // Previews collapse transclusions whatever their authored state; the links
+    // in the summaries still work.
+    for (const details of shown.querySelectorAll(".transclusion-details[open]")) {
+      details.removeAttribute("open");
     }
     return shown;
   },
@@ -466,18 +454,12 @@ function cancelHide(): void {
 function scheduleShow(link: HTMLElement): void {
   cancelShow();
   activeLink = link;
-  showTimer = window.setTimeout(
-    () => void show(link),
-    numberProp("--popover-show-delay", SHOW_DELAY_MS),
-  );
+  showTimer = window.setTimeout(() => void show(link), SHOW_DELAY_MS);
 }
 
 function scheduleHide(): void {
   cancelHide();
-  hideTimer = window.setTimeout(
-    hide,
-    numberProp("--popover-hide-delay", HIDE_DELAY_MS),
-  );
+  hideTimer = window.setTimeout(hide, HIDE_DELAY_MS);
 }
 
 function currentNodeUrl(): URL {
