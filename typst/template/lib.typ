@@ -31,15 +31,6 @@
     #document(node-href(id), title: node.title)[#render(id)]
     #label(id)
   ]
-  asset("site.json", json.encode(
-    (
-      nodes: site.nodes.keys().sorted(),
-      links: site.links.map(neighbors => neighbors.keys().sorted()),
-      transclusions: site.transclusions.map(neighbors => neighbors.keys().sorted())
-    ),
-    pretty: false
-  ))
-
   for name in (
     "style.css",
     "main.js",
