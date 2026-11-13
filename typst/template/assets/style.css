@@ -74,21 +74,16 @@
   --space-md: 1em;
   --space-lg: 1.5em;
   --space-xl: 2em;
-  --content-gap: 0.9375rem;
   --radius: 0.3125rem;
 
   /* Colors — Modus Themes palette.
      See https://protesilaos.com/emacs/modus-themes-colors */
   --color-text: light-dark(#000000, #ffffff); /* fg-main */
-  --color-text-subtle: light-dark(#193668, #c6daff); /* fg-alt */
   --color-text-faded: light-dark(#595959, #989898); /* fg-dim */
   --color-text-emphasis: light-dark(#8f0075, #f78fe7); /* magenta-warmer */
   --color-background: light-dark(#ffffff, #000000); /* bg-main */
-  --color-border: light-dark(#9f9f9f, #646464); /* border */
   --color-accent: light-dark(#b2e4dc, #45605e); /* bg-hover */
   --color-accent-hover: light-dark(#b2e4dc28, #45605e40); /* bg-hover + alpha */
-  --color-error: light-dark(#a60000, #ff5f59); /* err */
-  --color-info: light-dark(#005f5f, #6ae4b9); /* info */
   --color-mark: light-dark(#dae5ec, #2f3849); /* bg-hl-line */
 
   /* Link color. hanwen denotes links by underline and keeps them text-colored;
@@ -155,7 +150,6 @@
   --font-size-heading-md: calc(var(--font-size-base) * 1.1);
   --font-size-heading-sm: calc(var(--font-size-base) * 0.9);
   --font-size-heading-xs: calc(var(--font-size-base) * 0.85);
-  --font-size-heading-block: calc(var(--font-size-base) * 0.8);
   --line-height-base: 1.4; /* Butterick: 120–145% of point size; was hanwen's 1.55 */
   --line-height-heading: 1.2;
 
@@ -171,7 +165,6 @@
 
   /* Transitions */
   --transition-fast: 0.2s ease;
-  --transition-normal: 0.3s ease;
 }
 
 
@@ -261,15 +254,6 @@ p:has(+ section, + ul, + ol, + pre) {
   font-size: var(--font-size-heading-xs);
 }
 
-/* ----- Heading numbering (template-driven via data-number) ----- */
-/* Regular mainmatter headings get a "N. " prefix. Transclusion summary titles
-   (which carry their own taxon span) are numbered in 07-transclusions.css. */
-
-.node-mainmatter
-  :is(h2, h3, h4, h5, h6).toc-heading[data-number]:not(.transclusion-title)::before {
-  content: attr(data-number) ". ";
-}
-
 /* ----- Code ----- */
 
 pre,
@@ -356,8 +340,7 @@ figure.typst svg {
 }
 
 @media (prefers-color-scheme: dark) {
-  figure.typst svg,
-  svg.typst-frame {
+  figure.typst svg {
     filter: invert(1) hue-rotate(180deg);
   }
 }
@@ -508,10 +491,6 @@ body {
   body {
     padding-block: var(--space-md);
     padding-inline: var(--space-sm);
-  }
-
-  nav.node-toc {
-    display: none;
   }
 
   aside.node-rail {
@@ -756,30 +735,27 @@ body {
 
 /* Taxon chip — fixed hue per kind, so a definition is always cyan, a lemma
    always blue, etc. Unaccented taxa (reference, list, ...) stay neutral grey. */
-:is(.node-taxon, .toc-taxon).taxon-definition {
+.node-taxon.taxon-definition {
   background-color: var(--chip-cyan-bg);
   color: var(--chip-cyan-fg);
 }
 
-:is(.node-taxon, .toc-taxon).taxon-lemma {
+.node-taxon.taxon-lemma {
   background-color: var(--chip-blue-bg);
   color: var(--chip-blue-fg);
 }
 
-:is(
-  .node-taxon,
-  .toc-taxon
-):is(.taxon-theorem, .taxon-proposition, .taxon-corollary) {
+.node-taxon:is(.taxon-theorem, .taxon-corollary) {
   background-color: var(--chip-magenta-bg);
   color: var(--chip-magenta-fg);
 }
 
-:is(.node-taxon, .toc-taxon).taxon-example {
+.node-taxon.taxon-example {
   background-color: var(--chip-green-bg);
   color: var(--chip-green-fg);
 }
 
-:is(.node-taxon, .toc-taxon).taxon-question {
+.node-taxon.taxon-question {
   background-color: var(--chip-yellow-bg);
   color: var(--chip-yellow-fg);
 }
@@ -837,61 +813,13 @@ body {
    the family needs restating here. Round L2 settled (2026-06-11): "LG3"
    darker bold — full text color against the faded rail text — at "LI2"
    1.1em (--rail-heading-size). */
-.node-rail :is(.toc-title, .backmatter-section-title) {
+.node-rail .backmatter-section-title {
   font-family: var(--font-meta);
   font-size: var(--rail-heading-size);
   font-weight: 600;
   letter-spacing: 0.02em;
   margin-block: 0 var(--space-xs);
   color: var(--color-text);
-}
-
-.toc-list {
-  list-style: none;
-  padding-inline-start: 0;
-  margin: 0;
-}
-
-/* Nested levels indent. */
-.toc-list .toc-list {
-  padding-inline-start: 0.875rem;
-  margin-inline-start: 0.25rem;
-}
-
-.toc-item {
-  padding-block: 0.0625rem;
-  line-height: 1.35;
-}
-
-.toc-link {
-  color: var(--color-text-faded);
-  text-decoration: none;
-  border-radius: 0.2em;
-  transition:
-    color var(--transition-fast),
-    background-color var(--transition-fast);
-}
-
-.toc-link[data-number]::before {
-  content: attr(data-number) ". ";
-}
-
-.toc-link:hover {
-  color: var(--color-text);
-  background-color: var(--color-accent-hover);
-}
-
-.toc-taxon {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--font-meta);
-  font-size: 0.78em;
-  font-weight: 500;
-  margin-inline-start: 0.45em;
-  padding: 0.05em 0.4em;
-  border-radius: 4px;
-  background-color: var(--chip-neutral-bg);
-  color: var(--chip-neutral-fg);
 }
 
 
@@ -1018,29 +946,6 @@ a.node-link.node-ref .node-ref-address {
 
 .transclusion-summary::-webkit-details-marker {
   display: none;
-}
-
-/* Transclusion title — block-heading size, linked and numbered. The two-class
-   selector outranks the per-tag sizes in 02-base. */
-.transclusion-summary .transclusion-title {
-  font-size: var(--font-size-heading-sm);
-  margin-block: 0;
-  display: block;
-}
-
-.transclusion-summary .transclusion-title[data-heading-level="2"] {
-  font-size: var(--font-size-heading-md);
-}
-
-.transclusion-title > a.node-link {
-  color: inherit;
-}
-
-/* Number prefix (e.g. "2. Taxon"), consistent with mainmatter headings and
-   the ToC. */
-.transclusion-title[data-number]::before {
-  content: attr(data-number) ". ";
-  font-weight: 600;
 }
 
 /* Transcluded frontmatter — the same Round-F3 key/value grid as the top-level
@@ -1210,8 +1115,7 @@ a.node-link.node-ref .node-ref-address {
    expository ones stay upright. */
 .theorem-theorem .theorem-body,
 .theorem-lemma .theorem-body,
-.theorem-corollary .theorem-body,
-.theorem-proposition .theorem-body {
+.theorem-corollary .theorem-body {
   font-style: italic;
 }
 
