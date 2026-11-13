@@ -68,20 +68,9 @@ async function loadPreview(url: URL): Promise<HTMLElement | null> {
   return content;
 }
 
-/* Namespace every id in a cloned subtree and rewrite the references that
- * point at those ids so they keep resolving inside the clone. We rewrite the
- * id only when it is one we actually prefixed, so unrelated `#…`/`url(#…)`
- * values (none today, but cheap insurance) are left untouched. References
- * appear as `href`/`xlink:href` (SVG `<use>`, anchors) and as `url(#id)` in
- * presentation attributes or inline styles (clips/masks/gradients). */
-const URL_REF_ATTRIBUTES = [
-  "clip-path",
-  "mask",
-  "filter",
-  "fill",
-  "stroke",
-];
-
+/* Namespace every id in a cloned subtree and rewrite the `href` and
+ * `xlink:href` references to those ids so they keep resolving inside the
+ * clone. */
 function prefixIds(root: ParentNode, prefix: string): void {
   const ids = new Set<string>();
   for (const element of root.querySelectorAll("[id]")) {
@@ -95,25 +84,12 @@ function prefixIds(root: ParentNode, prefix: string): void {
     const id = value.slice(1);
     return ids.has(id) ? `#${prefix}${id}` : value;
   };
-  const rewriteUrl = (value: string): string =>
-    value.replace(/url\(\s*#([^\s)]+)\s*\)/g, (whole, id: string) =>
-      ids.has(id) ? `url(#${prefix}${id})` : whole,
-    );
 
-  for (const element of root.querySelectorAll<HTMLElement | SVGElement>("*")) {
+  for (const element of root.querySelectorAll("*")) {
     const href = rewriteHash(element.getAttribute("href"));
     if (href !== null) element.setAttribute("href", href);
     const xlink = rewriteHash(element.getAttribute("xlink:href"));
     if (xlink !== null) element.setAttribute("xlink:href", xlink);
-    for (const name of URL_REF_ATTRIBUTES) {
-      const value = element.getAttribute(name);
-      if (value !== null && value.includes("url(")) {
-        element.setAttribute(name, rewriteUrl(value));
-      }
-    }
-    if (element.style.cssText.includes("url(")) {
-      element.style.cssText = rewriteUrl(element.style.cssText);
-    }
   }
 }
 
@@ -444,7 +420,6 @@ function position(card: HTMLElement, link: HTMLElement): void {
 }
 
 async function show(link: HTMLElement): Promise<void> {
-  if (!devBackendAvailable()) return;
   const kind = kindFor(link);
   if (kind === null) return;
   const content = await kind.load(link);
@@ -511,11 +486,6 @@ function currentNodeUrl(): URL {
   return new URL(window.location.href);
 }
 
-function devBackendAvailable(): boolean {
-  const state = document.documentElement.dataset.weibianConnection;
-  return state === undefined || state === "connected";
-}
-
 function sameDocument(left: URL, right: URL): boolean {
   return left.origin === right.origin && left.pathname === right.pathname;
 }
@@ -523,7 +493,6 @@ function sameDocument(left: URL, right: URL): boolean {
 /* The shared preview-eligibility test for every handler: returns the trigger
  * element under the event target when some kind previews it, or null. */
 function linkFrom(target: EventTarget | null): HTMLElement | null {
-  if (!devBackendAvailable()) return null;
   if (!(target instanceof Element)) return null;
   const link = target.closest<HTMLElement>("a[href], pre.Agda [data-agda-def]");
   if (link === null) return null;
@@ -535,10 +504,6 @@ function linkFrom(target: EventTarget | null): HTMLElement | null {
 }
 
 export function initPopovers(): void {
-  window.addEventListener("weibian:connection", () => {
-    if (!devBackendAvailable()) hide();
-  });
-
   document.addEventListener("mouseover", (event) => {
     const link = linkFrom(event.target);
     if (link === null) return;
