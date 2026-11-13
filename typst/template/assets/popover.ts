@@ -1,20 +1,13 @@
-/* Hover cards over links: node previews and Agda type popups.
+/* Cards shown on hovering or focusing a link. There are two kinds, which share
+ * one card, the timers, the positioning and the dismissal, so that at most one
+ * card is on screen:
  *
- * Progressive enhancement over the HTML contract; pages stay fully readable
- * and navigable without this script. Two preview kinds share one card, the
- * hover-intent timers, the positioning, and dismissal — so at most one card
- * is ever on screen, whichever kind is under the pointer:
- *
- * - Node previews (Quartz/Wikipedia-style): any `a.node-link[href]` — prose
- *   links, rail/backmatter lists, single citations, transclusion titles —
- *   previews its target node on hover or keyboard focus. The target page is
- *   fetched once, parsed, and its `h1.node-title` + `section.node-mainmatter`
- *   are shown in the card. The cloned mainmatter keeps its contract classes
- *   so the page stylesheet styles it.
- * - Agda type popups: an identifier link in an annotated code block
- *   (`pre.Agda`, emitted by library/agda.typ) shows its definition's declared
- *   type, fetched from the per-module `types/<Module>.json` hover assets the
- *   build copies out of agda-annotate's output.
+ * - Node previews: an `a.node-link` to another page shows that page's header
+ *   and mainmatter, fetched once and cloned with their classes, so that the
+ *   page's stylesheet styles them.
+ * - Agda types: an identifier in an Agda block (`pre.Agda`, from the
+ *   template's agda.typ) shows its definition's type, from the module's
+ *   `types/<Module>.json`, which agda-annotate writes.
  */
 
 const SHOW_DELAY_MS = 200;
@@ -42,19 +35,14 @@ async function loadPreview(url: URL): Promise<HTMLElement | null> {
 
   const content = document.createElement("div");
   content.className = "popover-content";
-  // Clone the whole node header: the title renders; the metadata table is
-  // hidden by 10-popover.css by default but stays available for styles that
-  // want it (e.g. a taxon chip on the title line).
+  // The stylesheet hides the header's metadata in the card.
   const header = article.querySelector("header.node-header");
   if (header !== null) content.append(header.cloneNode(true));
   content.append(mainmatter.cloneNode(true));
-  // The host page may contain the same IDs (headings, self-links, and the
-  // `g…` glyph symbols Typst emits per inline SVG); prefix the clone's so they
-  // stay unique yet addressable for fragment scrolling. Intra-clone references
-  // must be prefixed in lockstep, or they dangle: a Typst/fletcher diagram
-  // draws its glyphs with `<use xlink:href="#g…">` against `<symbol id="g…">`,
-  // so renaming only the symbol would erase every glyph (the math labels)
-  // while the raw stroke paths survive.
+  // The page may have the same ids (headings, and the `g...` glyph symbols in
+  // Typst's inline SVGs), so prefix the clone's. Its references must be
+  // prefixed with them: a diagram draws each glyph with `<use href="#g...">`,
+  // and a dangling one draws nothing.
   prefixIds(content, "popover-");
   return content;
 }
@@ -101,11 +89,9 @@ interface PreviewKind {
   /* Toggled on the card so the stylesheet can restyle it per kind. */
   cardClass?: string;
   matches(trigger: HTMLElement): boolean;
-  /* Resolve the card contents; null shows nothing (missing or ineligible
-   * target — the pointer moving on mid-fetch is the caller's problem). */
+  /* The card's contents, or null for none. */
   load(trigger: HTMLElement): Promise<HTMLElement | null>;
-  /* Runs after the filled card is positioned (fragment scrolling,
-   * width-hugging). */
+  /* Runs after the filled card is positioned. */
   shown?(card: HTMLElement, trigger: HTMLElement): void;
 }
 
@@ -148,12 +134,10 @@ const nodePreviewKind: PreviewKind = {
   },
 };
 
-/* Agda type popups. A token link's fragment is its definition site —
- * `<module>-<offset>`, the anchor scheme of library/agda.typ, shared with
- * `agda --html` — and the declared types live in the per-module
- * `types/<Module>.json` build asset, keyed by offset. Module-name links
- * (positions <= 1) carry no fragment and builtin identifiers are unlinked
- * spans, so neither reaches the loader. */
+/* Agda types. An identifier's definition site is `<module>-<offset>`, the
+ * anchor scheme agda.typ shares with `agda --html`, and `types/<Module>.json`
+ * maps offsets to types. A link to a module has no fragment, so it never
+ * reaches the loader. */
 interface AgdaTypeEntry {
   name: string;
   type: string;
@@ -187,10 +171,8 @@ function parseAgdaAnchor(
   return match === null ? null : { module: match[1], position: match[2] };
 }
 
-/* The definition site a hoverable Agda token names: the data-agda-def
- * attribute for identifiers defined outside the corpus (builtins — no page
- * to link), an anchor's href fragment for corpus ones. library/agda.typ
- * emits both in the same `<module>-<offset>` form. */
+/* The definition site an Agda identifier names: the fragment of its link, or,
+ * for one defined in a module with no page, its `data-agda-def`. */
 function agdaDefSite(
   trigger: HTMLElement,
 ): { module: string; position: string } | null {
@@ -202,12 +184,10 @@ function agdaDefSite(
   return null;
 }
 
-/* The declared type is one flat string; give its display structure so the
- * stylesheet can choose the wrap policy (10-popover.css): the type splits at
- * top-level ` → ` into `agda-type-segment` spans (a break opportunity before
- * each arrow), and balanced bracket groups — implicit/instance/explicit
- * arguments — become `agda-type-group` spans (atoms a line break should not
- * split). Purely lexical; an unbalanced string degrades to plain text runs. */
+/* A type is one string. Split it so that the stylesheet can wrap it: at each
+ * top-level arrow into `agda-type-segment` spans, which a line may break
+ * between, and each bracketed argument into an `agda-type-group` span, which
+ * a line should not break inside. Unbalanced brackets leave plain text. */
 const AGDA_OPEN_BRACKETS = new Set(["(", "{", "[", "⦃"]);
 const AGDA_CLOSE_BRACKETS = new Set([")", "}", "]", "⦄"]);
 
@@ -239,9 +219,7 @@ function appendAgdaSegment(parent: HTMLElement, text: string): void {
 }
 
 function renderAgdaType(rawType: string): HTMLElement {
-  // agda-annotate pretty-prints long types across lines (526 of 941 corpus
-  // types carry newlines); the popup imposes its own wrap policy, so
-  // collapse all authored whitespace runs before segmenting.
+  // agda-annotate breaks long types across lines; the card wraps them itself.
   const type = rawType.replace(/\s+/g, " ").trim();
   const body = document.createElement("span");
   body.className = "agda-type-body";
@@ -256,8 +234,7 @@ function renderAgdaType(rawType: string): HTMLElement {
       type[i - 1] === " " &&
       type[i + 1] === " "
     ) {
-      // The space before the arrow separates segments; the arrow leads the
-      // next one, so a wrapped line reads `→ …`.
+      // The arrow begins the next segment, so a wrapped line starts with it.
       appendAgdaSegment(body, type.slice(start, i - 1));
       body.append(" ");
       start = i;
@@ -267,22 +244,16 @@ function renderAgdaType(rawType: string): HTMLElement {
   return body;
 }
 
-/* The card's stylesheet width is max-content clamped to max-width — the
- * width of the whole signature on ONE line, clamped. Once lines wrap (the
- * body dropping to its own line, segments breaking before arrows), the
- * rendered lines can be far narrower than that clamp, leaving dead space to
- * the right. Intrinsic sizing can't see line breaks, so measure the widest
- * rendered line and hug it. Text-fragment rects (not element boxes) so the
- * measurement reaches inside the inline-block body, whose own box can also
- * claim more width than its internal lines use. */
+/* The stylesheet sizes the card to its contents on one line, clamped to a
+ * maximum width. Once the type wraps, its lines can be much narrower than
+ * that, and CSS cannot size a box to its wrapped lines, so measure the widest
+ * line of text and narrow the card to it. */
 function shrinkToWidestLine(card: HTMLElement): void {
   const walker = document.createTreeWalker(card, NodeFilter.SHOW_TEXT);
   const range = document.createRange();
   let widest = 0;
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-    // Whitespace-only nodes (the segment separators) hang invisibly at line
-    // ends — after an internally-wrapped segment's full-width box they sit at
-    // the content edge itself, which would defeat the hug. Glyphs only.
+    // The spaces between segments can hang at the right edge of a line.
     if (!/\S/.test(node.nodeValue ?? "")) continue;
     range.selectNodeContents(node);
     for (const rect of range.getClientRects()) {
@@ -298,8 +269,7 @@ function shrinkToWidestLine(card: HTMLElement): void {
     Number.parseFloat(style.paddingRight);
   const overhang = contentRight - widest;
   if (overhang <= 0) return;
-  // border-box; +1px slack so a fractional pixel never re-wraps the widest
-  // line (which fits by construction — narrowing can't move any other line).
+  // One pixel more, so that rounding never wraps the widest line again.
   card.style.width = `${Math.ceil(rect.width - overhang) + 1}px`;
 }
 
@@ -328,7 +298,7 @@ const agdaTypeKind: PreviewKind = {
   },
   shown(card, trigger) {
     shrinkToWidestLine(card);
-    // The narrower card may clamp/flip differently; reposition against it.
+    // The narrower card may fit differently.
     position(card, trigger);
   },
 };
@@ -356,16 +326,10 @@ function getPopover(): HTMLElement {
   return popover;
 }
 
-/* Placement is what tooltip/popover positioning libraries call the "flip"
- * and "size" middleware: prefer the space below the link; if the card's
- * natural height doesn't fit there, flip to whichever side has more room,
- * and cap the card's height to that side's available space so it scrolls
- * internally (overflow: auto) instead of overflowing the viewport. The card's
- * top edge — the title — is therefore always visible, and the card never
- * covers the link it annotates. For the general treatment see floating-ui's
- * middleware docs: https://floating-ui.com/docs/flip and
- * https://floating-ui.com/docs/size (and https://floating-ui.com/docs/shift
- * for the horizontal clamp). */
+/* Place the card below the link, unless it does not fit there and there is
+ * more room above. Cap its height to the room on that side, so that it
+ * scrolls instead of leaving the viewport and never covers the link, and
+ * clamp it horizontally into the viewport. */
 function position(card: HTMLElement, link: HTMLElement): void {
   const rect = link.getBoundingClientRect();
   const viewportWidth = document.documentElement.clientWidth;
@@ -385,8 +349,7 @@ function position(card: HTMLElement, link: HTMLElement): void {
 
   // Flip: below unless it doesn't fit there and above has more room.
   const below = naturalHeight <= spaceBelow || spaceBelow >= spaceAbove;
-  // Size: cap to the chosen side. The card is border-box (10-popover.css),
-  // so the cap and offsetHeight measure the same box.
+  // The card is border-box, so the cap and offsetHeight measure the same box.
   const space = Math.max(below ? spaceBelow : spaceAbove, 0);
   if (naturalHeight > space) card.style.maxHeight = `${space}px`;
   const height = card.offsetHeight;
@@ -478,9 +441,8 @@ function linkFrom(target: EventTarget | null): HTMLElement | null {
   if (!(target instanceof Element)) return null;
   const link = target.closest<HTMLElement>("a[href], pre.Agda [data-agda-def]");
   if (link === null) return null;
-  // Links inside the card stay ordinary navigable links: previewing them
-  // would replace and reposition the card under the cursor (no nested
-  // popovers — click to go deeper).
+  // Links inside the card are ordinary links; previewing them would replace
+  // the card under the pointer.
   if (link.closest(".popover") !== null) return null;
   return kindFor(link) === null ? null : link;
 }

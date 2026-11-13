@@ -1,23 +1,16 @@
-/* Command-palette search over the pagefind index.
+/* A search palette over the Pagefind index, opened with Cmd-K or Ctrl-K, or
+ * with `/` when not typing in a field. It loads Pagefind's runtime from
+ * /pagefind/ the first time it opens, so pages that never search never load
+ * the runtime or the index. If the runtime is missing, the palette says so.
  *
- * Progressive enhancement: opened with ⌘K / Ctrl-K (or `/` when not typing),
- * it lazy-loads the static pagefind runtime from /pagefind/ the first time it
- * opens, so the WASM + index stay off every page load. The index ships with the
- * build, so — unlike the popover island — this does NOT depend on the dev watch
- * backend (`data-weibian-connection`); it works in production from static files.
- * If the runtime is absent (e.g. a stale build with no /pagefind/), the palette
- * opens and reports that quietly rather than erroring.
- *
- * The result rows reconstruct the site's own chips from pagefind metadata: the
- * taxon badge (`filters.taxon`) and tag chips (`filters.tag`, hued by the same
- * deterministic hash as the template) reuse the `taxon-*` / `hue-*` classes, so
- * results look native. The excerpt's <mark> highlights come straight from
- * pagefind. */
+ * Result rows rebuild the page's chips from Pagefind's filters: the taxon from
+ * `taxon`, and each tag from a filter named `tag-<hue>` (see the template's
+ * `pagefind-attrs`). The excerpt's <mark> highlights are Pagefind's. */
 
 const MAX_RESULTS = 12;
 const DEBOUNCE_MS = 120;
 
-// --- pagefind runtime (minimal surface we use) ---------------------------------
+// The part of Pagefind's interface this file uses.
 
 interface PagefindFragment {
   url: string;
@@ -40,8 +33,8 @@ function loadPagefind(): Promise<Pagefind | null> {
   if (pagefindPromise === undefined) {
     pagefindPromise = (async () => {
       try {
-        // Absolute path, kept external by esbuild (--external:/pagefind/*): the
-        // pagefind crawl emits this at build time; it is not part of our bundle.
+        // Pagefind writes this when it indexes the site; esbuild leaves the
+        // import alone (--external:/pagefind/*).
         const module = (await import("/pagefind/pagefind.js")) as Pagefind;
         await module.init?.();
         return module;
@@ -52,8 +45,6 @@ function loadPagefind(): Promise<Pagefind | null> {
   }
   return pagefindPromise;
 }
-
-// --- palette UI ----------------------------------------------------------------
 
 let dialog: HTMLDialogElement | undefined;
 let input: HTMLInputElement;
@@ -95,7 +86,7 @@ function renderResults(): void {
 
     const excerpt = document.createElement("span");
     excerpt.className = "search-result-excerpt";
-    // pagefind-generated markup (trusted build output); carries <mark> spans.
+    // Pagefind's markup, from the build; it carries the <mark> highlights.
     excerpt.innerHTML = fragment.excerpt;
 
     const item = document.createElement("li");
@@ -247,9 +238,7 @@ function ensureDialog(): HTMLDialogElement {
     }
   });
 
-  // <dialog> gives us the focus trap, Esc-to-close, and background inerting;
-  // add backdrop-click-to-close (a click landing on the dialog itself, i.e.
-  // outside the panel).
+  // A click on the dialog itself, outside the panel, is on the backdrop.
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) dialog.close();
   });
@@ -269,7 +258,7 @@ function open(): void {
   if (element.open) return;
   element.showModal();
   input.focus();
-  void loadPagefind(); // warm the runtime while the user types the first key
+  void loadPagefind();
 }
 
 export function initSearch(): void {
