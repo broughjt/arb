@@ -1,13 +1,4 @@
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 00-fonts — self-hosted webfonts. MUST be concatenated first so @font-face
-   rules are available before the rest of the stylesheet resolves font tokens.
-
-   Vendored through Nix/Typix virtual paths for the final/offline build:
-   - EB Garamond — body AND headings (variable weight + italics);
-   - Source Sans 3 — apparatus sans (frontmatter, chips, right rail),
-     variable weight;
-   - JuliaMono — pre/code/raw, regular + bold;
-   - Latin Modern Math — native MathML. */
+/* Fonts. The flake copies the files from nixpkgs into the template package. */
 
 @font-face {
   font-family: "EB Garamond";
@@ -57,12 +48,8 @@
   src: url("LatinModernMath-Regular.otf") format("opentype");
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 01-tokens — design tokens, ported verbatim from hanwen.io's weibian.css.
-   These are DOM-independent: the Modus Themes palette via light-dark(), the
-   spacing scale, the type scale, and transitions. Adopted wholesale per the
-   Phase-4 decision to clone hanwen's tokens (HANWEN_CLONE_PLAN.md §2). */
+/* Tokens. Colors are from the Modus themes
+   (https://protesilaos.com/emacs/modus-themes-colors) and named after them. */
 
 :root {
   /* Enable the light-dark() function and native form/scrollbar theming. */
@@ -76,8 +63,7 @@
   --space-xl: 2em;
   --radius: 0.3125rem;
 
-  /* Colors — Modus Themes palette.
-     See https://protesilaos.com/emacs/modus-themes-colors */
+  /* Colors */
   --color-text: light-dark(#000000, #ffffff); /* fg-main */
   --color-text-faded: light-dark(#595959, #989898); /* fg-dim */
   --color-text-emphasis: light-dark(#8f0075, #f78fe7); /* magenta-warmer */
@@ -87,20 +73,10 @@
   --color-mark: light-dark(#dae5ec, #2f3849); /* bg-hl-line */
   --color-rule: light-dark(#e0e0e0, #303030); /* bg-inactive */
 
-  /* Link color. hanwen denotes links by underline and keeps them text-colored;
-     we keep our own no-underline + hover-wash decision (HANWEN_CLONE_PLAN.md §4),
-     which needs color to signal clickability — Butterick: "color remains the
-     idiomatic way to denote clickability on the web" (Practical Typography,
-     "color"). Round 2 decision: no visited differentiation — on a densely
-     interlinked notes site most links are visited, and the blue/magenta mottle
-     carried no information. */
+  /* Links are colored rather than underlined, and visited links look the same. */
   --color-link: light-dark(#0031a9, #79a8ff); /* blue / blue-warmer */
 
-  /* Frontmatter chips — Round F3 (2026-06-10): Notion-style pastel chips drawn
-     from the Modus palette. Backgrounds are the "nuanced" (faintest) variants;
-     text is the base hue in light mode and the "faint" hue in dark mode, which
-     keeps Notion's muted look while staying entirely inside Modus. Neutral =
-     bg-dim / fg-dim, the default-grey chip. */
+  /* Chips: the faintest Modus background of each hue, with its text color. */
   --chip-neutral-bg: light-dark(#f2f2f2, #1e1e1e);
   --chip-neutral-fg: light-dark(#595959, #989898);
   --chip-red-bg: light-dark(#ffe8e8, #3a0c14);
@@ -116,32 +92,18 @@
   --chip-magenta-bg: light-dark(#f8e6f5, #2f0c3f);
   --chip-magenta-fg: light-dark(#721045, #caa6df);
 
-  /* Typography — Round T decision (2026-06-09), superseding the hanwen-clone
-     Libertinus tokens (locked-decision §2): EB Garamond for body and headings,
-     JuliaMono for code, Latin Modern Math for native MathML. ToC/backmatter
-     stay in the body font (apparatus-serif experiment rejected, "U1"). */
+  /* Typography */
   --font-body: "EB Garamond", serif;
   --font-heading: "EB Garamond", serif;
   --font-mono: "JuliaMono", monospace;
   --font-math: "Latin Modern Math", math;
-  /* Apparatus sans (Round F3 voice; face settled Round L2 "LF2", 2026-06-11):
-     Source Sans 3 — humanist skeleton that harmonizes with EB Garamond's
-     old-style forms. One shared voice for the frontmatter property grid +
-     chips and the rail. */
+  /* For metadata, chips, the rail and search. */
   --font-meta: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
-  /* Frontmatter grid geometry — Round F4 dial-in levers (all tuner sliders).
-     Title→metadata gap baked at 1rem (user pick 2026-06-10, down from the
-     1.5rem first guess; 0.5–0.75rem still under consideration vs title size). */
+  /* The metadata grid of node headers and transclusions. */
   --meta-key-gap: 1rem; /* gap between the key column and the values */
   --meta-font-scale: 0.95; /* metadata size as a fraction of --font-size-xs */
-  /* Metrics re-judge under EB Garamond (2026-06-10): x-height is 0.40em vs
-     Libertinus Sans's 0.46em (measured in-browser), so the Round 1 22px-
-     apparent size needs a larger nominal size — Butterick: 15–25px, err
-     larger for small-x-height fonts. Measure (85ex), line-height (1.4) and
-     paragraph gap (0.6lh) are font-relative and re-judged unchanged. */
-  --font-size-base: 1.375rem; /* 22px — was 20px under Libertinus Sans */
-  /* Derived sizes are multiples of the base so they track any future body-
-     size change; the ratios are Round 1's (e.g. heading-xl = 1.4 × body). */
+  --font-size-base: 1.375rem; /* 22px */
+  /* Sizes are multiples of the base size. */
   --font-size-sm: calc(var(--font-size-base) * 0.8);
   --font-size-xs: calc(var(--font-size-base) * 0.7);
   --font-size-heading-xl: calc(var(--font-size-base) * 1.4);
@@ -149,29 +111,17 @@
   --font-size-heading-md: calc(var(--font-size-base) * 1.1);
   --font-size-heading-sm: calc(var(--font-size-base) * 0.9);
   --font-size-heading-xs: calc(var(--font-size-base) * 0.85);
-  --line-height-base: 1.4; /* Butterick: 120–145% of point size; was hanwen's 1.55 */
+  --line-height-base: 1.4;
   --line-height-heading: 1.2;
 
-  /* Layout — the centered measure for the reading column (hanwen uses 90ex). */
+  /* The reading column's width. */
   --measure: 85ex;
-
-  /* Right rail (Round L, settled 2026-06-11): the apparatus voice for the
-     Quartz-style rail — ToC + contexts/backlinks/related. Sans (--font-meta),
-     small, muted. Sizes are tokens so the Round L2 tuner presets can flip
-     them; headings are relative to the rail text size. */
 
   /* Transitions */
   --transition-fast: 0.2s ease;
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 02-base — element-level typography and prose surfaces, ported from hanwen.io's
-   weibian.css and adapted to the bundle DOM. Key adaptation: heading
-   numbering uses the template-emitted `data-number` attribute (see
-   HANWEN_CLONE_PLAN.md "hard parts") instead of hanwen's CSS-counter chain. */
-
-/* ----- Base ----- */
+/* Elements */
 
 body {
   font-family: var(--font-body);
@@ -179,22 +129,18 @@ body {
   line-height: var(--line-height-base);
   color: var(--color-text);
   background-color: var(--color-background);
-  /* No hyphenation: prose is ragged-right at a wide measure, so auto-hyphens
-     mostly idle and occasionally produce bad breaks (e.g. "funda-/mental" in
-     titles); `text-wrap: pretty` already smooths the rag. Revisit if/when we
-     add a mobile layout, where the narrow column makes hyphenation worthwhile. */
+  /* Ragged right without hyphenation; `text-wrap: pretty` evens the rag. */
   text-wrap: pretty;
   accent-color: var(--color-accent);
 }
 
-/* Base anchor reset — links inherit text color and decoration by default;
-   role-specific link styling lives in 06-links.css. */
+/* Links are styled by role, under Links below. */
 a {
   color: inherit;
   text-decoration: inherit;
 }
 
-/* ----- Headings ----- */
+/* Headings */
 
 :is(h1, h2, h3, h4, h5, h6) {
   font-family: var(--font-heading);
@@ -217,8 +163,6 @@ a {
 
 p {
   margin-block-start: var(--space-sm);
-  /* Butterick: paragraph spacing 50–100% of body size, never a full blank line.
-     0.6lh ≈ 84% of the 20px body; was hanwen's 1lh (~140%). */
   margin-block-end: 0.6lh;
 }
 
@@ -227,9 +171,7 @@ p:has(+ section, + ul, + ol, + pre) {
   margin-block-end: var(--space-sm);
 }
 
-/* ----- Heading sizes (mainmatter) ----- */
-/* Transclusion summary titles are resized in 07-transclusions.css with a
-   higher-specificity selector. */
+/* Heading sizes in the mainmatter */
 
 .node-mainmatter h2 {
   font-size: var(--font-size-heading-lg);
@@ -247,28 +189,23 @@ p:has(+ section, + ul, + ol, + pre) {
   font-size: var(--font-size-heading-xs);
 }
 
-/* ----- Code ----- */
+/* Code */
 
 pre,
 code {
-  font-family: var(--font-mono); /* JuliaMono — Round T ("V1") */
+  font-family: var(--font-mono);
   border-radius: var(--radius);
 }
 
-/* Inline code is tinted (no background). */
+/* Inline code is colored, with no background. */
 code:not(pre code) {
   color: var(--color-text-emphasis);
   font-size: var(--font-size-xs);
   padding: 0.2em;
 }
 
-/* Block code runs bare, like hanwen and our block math — Round A2
-   (2026-07-02) removed the Round-2 bg-dim surface: its rationale was that
-   unhighlighted blocks blend into prose, and the Agda aspect-class palette
-   (12-agda.css) now does that differentiation.
-
-   Round μ (2026-06-11): preserve authored lines rather than soft-wrapping code,
-   and size the block so an 80-column Agda line fits the 85ex reading column. */
+/* Code blocks have no background, keep their authored lines, and are sized so
+   that an 80-column Agda line fits the reading column. */
 pre {
   font-size: calc(var(--font-size-base) * 0.72);
   line-height: 1.35;
@@ -277,25 +214,22 @@ pre {
   overflow-y: hidden;
 }
 
-/* ----- Math (native MathML) ----- */
+/* Math (MathML) */
 
 math {
-  /* Latin Modern Math at 1em — Round T ("W1", "X"): the classic LaTeX face;
-     the old 1.12em upscale read too big against the text. */
   font-family: var(--font-math);
   font-size: 1em;
 }
 
-/* Do NOT set `display` here: native MathML resolves <math display="block"> to
-   `display: block math`, and overriding it to plain `block` destroys the math
-   layout (tokens stack vertically). Only adjust spacing/overflow. */
+/* Do not set `display`: a block equation's is `block math`, and plain `block`
+   stacks its tokens vertically. */
 math[display="block"] {
   margin-block: var(--space-md);
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-/* ----- Media ----- */
+/* Media */
 
 img {
   max-inline-size: 100%;
@@ -305,24 +239,16 @@ figure {
   text-align: center;
 }
 
-/* Typst-framed figures are used for layout-dependent content such as
-   Fletcher/CeTZ diagrams, which Typst's semantic HTML export cannot lower
-   directly yet. `html.frame` emits an inline SVG with fixed black strokes; in
-   dark mode we invert it to keep diagrams legible. */
+/* Typst renders diagrams (fletcher, CeTZ) as inline SVG frames drawn in black,
+   which are inverted in dark mode. */
 figure.typst {
   display: flex;
   justify-content: center;
 }
 
-/* Scale the diagram down to fit the reading column instead of letting it
-   overflow into a scroll box. Typst's `html.frame` hardcodes the SVG's size as
-   inline `width`/`height` in em; `max-inline-size` caps the width, and
-   `height: auto` lets it track so the aspect ratio is preserved. The `auto`
-   needs `!important` purely to win over that tool-emitted inline `height` —
-   without it the box keeps the intrinsic height and the scaled diagram sits in
-   a letterbox. Scaling (rather than scrolling) also avoids the overflow trap:
-   `overflow-x: auto` forces `overflow-y` to compute to `auto`, so a horizontal
-   scrollbar would clip the diagram's bottom row (Firefox). */
+/* Scale a diagram down to the column rather than scroll it, since a horizontal
+   scroll bar would clip its bottom row. Typst sets the SVG's height inline,
+   hence `!important`. */
 figure.typst svg {
   max-inline-size: 100%;
   height: auto !important;
@@ -339,7 +265,7 @@ figcaption {
   padding: 0.1875rem;
 }
 
-/* ----- Lists ----- */
+/* Lists */
 
 .node-mainmatter :is(ul, ol) {
   margin-block-start: var(--space-sm);
@@ -363,7 +289,7 @@ ol li ol li ol {
   list-style-type: lower-roman;
 }
 
-/* ----- Blockquotes ----- */
+/* Blockquotes */
 
 blockquote {
   border-inline-start: 1px solid var(--color-rule);
@@ -378,7 +304,7 @@ blockquote p {
   margin-block: 0.35lh;
 }
 
-/* ----- Tables ----- */
+/* Tables */
 
 table {
   inline-size: 100%;
@@ -403,7 +329,7 @@ th {
   text-align: start;
 }
 
-/* ----- Rules & marks ----- */
+/* Rules and marks */
 
 hr {
   margin-block: var(--space-lg);
@@ -418,21 +344,15 @@ mark {
   background-color: var(--color-mark);
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 03-layout — page grid and rail placement. Round L (settled 2026-06-11,
-   "LA3"): a Quartz-style right rail — aside.node-rail (ToC + contexts/
-   backlinks/related, per contract amendment #4) is one sticky stack in the
-   right gutter; the reading column stays centered. The old sticky-left
-   display:contents baseline is retired. References stay in .backmatter at the
-   bottom of the reading column. */
+/* Layout. On wide screens the reading column is centered and the rail sticks
+   beside it on the right; on narrow ones the rail follows the article. */
 
 body {
   margin: 0;
   padding-block: var(--space-xl);
 }
 
-/* ----- Desktop: centered column + sticky right rail stack ----- */
+/* Wide screens */
 
 @media (width > 1000px) {
   article.node {
@@ -441,18 +361,14 @@ body {
     column-gap: var(--space-lg);
   }
 
-  /* Header, the revision callout, mainmatter, and backmatter occupy the
-     centered middle column (the reading column). Without this the callout —
-     an <aside> that is a direct grid child — would auto-place into the empty
-     left gutter instead of the body. */
+  /* Everything but the rail goes in the middle column; otherwise the revision
+     callout, an <aside>, would be placed in the left one. */
   article.node > :is(.node-header, .revision-callout, .node-mainmatter, .backmatter) {
     grid-column: 2;
     min-width: 0;
   }
 
-  /* The rail hugs the reading column on the right and sticks to the top as
-     one unit, scrolling internally if taller than the viewport. The Round L2
-     vertical-position presets override the inset/sizing here. */
+  /* The rail sticks to the top, and scrolls if it is taller than the viewport. */
   article.node > aside.node-rail {
     grid-column: 3;
     grid-row: 1 / span 99;
@@ -468,9 +384,7 @@ body {
   }
 }
 
-/* ----- Mobile: single column. The ToC hides (mirrors hanwen); the rail's
-   link sections stay in normal flow at the bottom under a hairline, so
-   backlinks/related/contexts never disappear on narrow screens. ----- */
+/* Narrow screens */
 
 @media (width <= 1000px) {
   body {
@@ -485,26 +399,9 @@ body {
   }
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 04-node-header — the node title block + frontmatter metadata.
-
-   Round F3 (2026-06-10) retires the hanwen taxon-kicker-above-the-title
-   treatment. The frontmatter is now a Notion-style property table below the
-   title: one row per key (taxon / id / tags), muted keys in an aligned left
-   column (no colons — the alignment does the work), categorical values as
-   pastel chips colored from the Modus nuanced palette, plain muted text for
-   the id. A hairline rule closes the block, like Notion's property divider.
-
-       Title
-
-       taxon   [definition]          <- chip, fixed hue per taxon kind
-       id      0011                  <- plain muted text
-       tags    [model theory] [sets] <- chips, hue-* from template hash
-       ───────────────────────────
-
-   The shared grid/chip rules target both the top-level `.node-meta` and the
-   in-transclusion `.transclusion-meta`; 07-transclusions only scales them. */
+/* Node header: the title, then the metadata as a grid of keys and values
+   (taxon, id, tags) closed by a rule. The grid and chip rules are shared with
+   transclusions' metadata. */
 
 .node-header {
   display: flex;
@@ -512,35 +409,25 @@ body {
   margin-block-end: var(--space-lg);
 }
 
-/* Title first, metadata below (source order is dl then h1). */
+/* The title comes first, though the metadata precedes it in the source. */
 .node-title {
   order: 1;
   font-size: var(--font-size-heading-xl);
   margin-block: 0;
 }
 
-/* Version badge appended to the title of a note that is part of a revision
-   lineage — "(version 2; latest)". Derived from the supersedes chain, so it is
-   never hand-maintained. Muted and a notch smaller so it reads as apparatus
-   next to the title proper. */
+/* The version suffix of a title, such as "(version 2; latest)". */
 .node-version {
   font-family: var(--font-meta);
   font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-text-faded);
   white-space: nowrap;
-  /* Center the smaller suffix against the larger title text rather than letting
-     it hang on the baseline. */
   vertical-align: middle;
 }
 
-/* In-body revision callout — the lineage display for a note that has several
-   versions, shown at the top of the reading column on every version. The safety
-   rail: a reader who lands on a superseded version must know before reading that
-   newer thinking exists. Soft-fill admonition (no border, tinted by state) with
-   a leading indicator glyph: caution on a superseded version, info on the latest.
-   Tuner pass (2026-06-30): soft fill, state ⚠/ℹ icon, sans (--font-meta), 1.1rem
-   (--font-size-sm). Color and exact spacing still being dialed. */
+/* The callout at the top of every version of a note with several versions, so
+   that a reader of a superseded version knows that a newer one exists. */
 .revision-callout {
   margin-block: 0 1.5rem;
   padding: 1rem 1.1rem;
@@ -550,19 +437,14 @@ body {
   color: var(--color-text);
 }
 
-/* Gap above the callout. Owned by the header's bottom margin (with the callout's
-   own top margin at 0) rather than the callout's top margin: on desktop
-   `article.node` is a grid, whose items' margins do NOT collapse, so giving both
-   the header and the callout vertical margins would sum into too large a gap.
-   `:has()` scopes this to the header-followed-by-callout case. The value is
-   intentionally larger than the gap below — the gap below visually fills out from
-   the leading margin of the body content beneath, so equal explicit values would
-   look bottom-heavy. (Tuner pass: above 3rem, below 1.5rem.) */
+/* The gap above the callout belongs to the header, since the margins of grid
+   items do not collapse. It is larger than the gap below, to which the body's
+   own leading adds. */
 .node-header:has(+ .revision-callout) {
   margin-block-end: 3rem;
 }
 
-/* State tint — green = informational (latest), yellow = caution (superseded). */
+/* Green for the latest version, yellow for a superseded one. */
 .revision-callout.is-latest {
   background-color: var(--chip-green-bg);
 }
@@ -571,10 +453,7 @@ body {
   background-color: var(--chip-yellow-bg);
 }
 
-/* Leading indicator glyph (::before, so no HTML change) — Lucide-style line
-   icons drawn as mask-image so they take the callout's text color via
-   currentColor: an info circle for the latest, a rounded warning triangle for a
-   superseded version. */
+/* An info or warning icon (Lucide), masked so that it takes the text color. */
 .revision-callout::before {
   content: "";
   display: inline-block;
@@ -596,12 +475,9 @@ body {
   mask-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%20fill='none'%20stroke='%23000'%20stroke-width='2'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='m21.73%2018-8-14a2%202%200%200%200-3.48%200l-8%2014A2%202%200%200%200%204%2021h16a2%202%200%200%200%201.73-3Z'/%3E%3Cpath%20d='M12%209v4'/%3E%3Cpath%20d='M12%2017h.01'/%3E%3C/svg%3E");
 }
 
-/* The 3+ version list is a three-column grid — bullet · body · current-marker —
-   shared across rows via subgrid so every row's body occupies the same
-   max-content column. The "current" marker then sits in a consistent column just
-   past the end of the longest body, rather than flush to the box edge. (Note:
-   display:grid on the <li> suppresses the native ::marker, so the disc bullet is
-   drawn with ::before instead.) */
+/* The version list is a grid of bullet, title and "current" marker, shared by
+   the rows through subgrid so that the markers line up. A grid item has no
+   ::marker, so the bullet is drawn with ::before. */
 .revision-version-list {
   display: grid;
   grid-template-columns: max-content max-content 1fr;
@@ -620,12 +496,11 @@ body {
 }
 
 .revision-version-item::before {
-  content: "\2022"; /* disc bullet */
+  content: "\2022";
   color: var(--color-text-faded);
 }
 
-/* The version you are viewing: bold and unlinked, flagged with the "current"
-   marker in the third column. */
+/* The version being viewed. */
 .revision-version-item.current .revision-version-title {
   font-weight: 600;
 }
@@ -635,9 +510,7 @@ body {
   vertical-align: middle;
 }
 
-/* In backmatter the suffix is inside the node link, so let it read as link text
-   (inheriting the link color) rather than the muted grey used in the title badge
-   and the callout list. */
+/* In a node list the suffix is part of the link, so it takes the link's color. */
 .node-list-item .revision-version-tag {
   color: inherit;
 }
@@ -649,19 +522,17 @@ body {
 .node-meta {
   order: 2;
   margin-block: 1rem 0;
-  /* Hairline divider under the property block (Notion's boundary). Modus
-     bg-inactive — deliberately quieter than the border token. Tuner toggle P. */
   border-block-end: 1px solid var(--color-rule);
   padding-block-end: 0.9rem;
 }
 
-/* — The aligned key/value grid (shared with .transclusion-meta) — */
+/* The metadata grid */
 
 :is(.node-meta, .transclusion-meta) {
   display: grid;
   grid-template-columns: minmax(6em, max-content) 1fr;
   column-gap: var(--meta-key-gap);
-  row-gap: 0.3rem; /* tight — Round F3 density pick */
+  row-gap: 0.3rem;
   align-items: baseline;
   font-family: var(--font-meta);
   font-size: calc(var(--font-size-xs) * var(--meta-font-scale));
@@ -682,8 +553,7 @@ body {
   margin: 0;
 }
 
-/* id — plain muted text, like Notion's non-categorical values ("Last edited").
-   It is still a link; brighten on hover instead of painting it link-blue. */
+/* The id is a link, muted until hovered. */
 :is(.node-meta, .transclusion-meta) .node-address {
   color: var(--color-text-faded);
   font-weight: 500;
@@ -694,26 +564,25 @@ body {
   color: var(--color-text);
 }
 
-/* — Chips: taxon + tags (Notion Select / Multi-select look) — */
+/* Chips */
 
 .node-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem; /* tight */
+  gap: 0.25rem;
 }
 
 :is(.node-meta, .transclusion-meta, .search-result-meta) :is(.node-taxon, .node-tag) {
   display: inline-flex;
   align-items: center;
   border-radius: 4px;
-  padding: 0.05em 0.4em; /* tight */
+  padding: 0.05em 0.4em;
   font-weight: 500;
   background-color: var(--chip-neutral-bg);
   color: var(--chip-neutral-fg);
 }
 
-/* Taxon chip — fixed hue per kind, so a definition is always cyan, a lemma
-   always blue, etc. Unaccented taxa (reference, list, ...) stay neutral grey. */
+/* Each taxon has a fixed hue; the others stay neutral. */
 .node-taxon.taxon-definition {
   background-color: var(--chip-cyan-bg);
   color: var(--chip-cyan-fg);
@@ -739,8 +608,7 @@ body {
   color: var(--chip-yellow-fg);
 }
 
-/* Tag chips — per-value hue from the template's deterministic hash, so the
-   same tag is the same pastel everywhere. */
+/* A tag's hue comes from a hash of its name, computed by the template. */
 .node-tag.hue-red {
   background-color: var(--chip-red-bg);
   color: var(--chip-red-fg);
@@ -771,16 +639,7 @@ body {
   color: var(--chip-magenta-fg);
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 05-toc — the rail's typography: ToC plus the contexts/backlinks/related
-   sections that share aside.node-rail with it (Round L amendment #4).
-
-   Round L settled picks (2026-06-11): sans apparatus voice ("LB2", --font-meta
-   — the frontmatter metadata face), muted grey ("LC2", fg-dim — the
-   frontmatter-key color, dropping the link-blue-ish fg-alt), and one matched
-   treatment for all rail headings (Contents / Contexts / Backlinks / Related),
-   Quartz-style. Numbering still reads the template-emitted `data-number`. */
+/* Rail: the contexts, backlinks and related nodes. */
 
 .node-rail {
   font-family: var(--font-meta);
@@ -788,10 +647,7 @@ body {
   color: var(--color-text-faded);
 }
 
-/* Matched rail headings. h2/h3 are pinned to --font-heading in 02-base, so
-   the family needs restating here. Round L2 settled (2026-06-11): "LG3"
-   darker bold — full text color against the faded rail text — at "LI2"
-   1.1em (--rail-heading-size). */
+/* Headings get the heading font under Elements, so restate the family. */
 .node-rail .backmatter-section-title {
   font-family: var(--font-meta);
   font-size: 1.1em;
@@ -801,16 +657,8 @@ body {
   color: var(--color-text);
 }
 
+/* Links: colored, not underlined, with a wash on hover. */
 
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 06-links — link + citation styling. This is the one deliberate departure from
-   hanwen (HANWEN_CLONE_PLAN.md §4): instead of hanwen's dotted/solid underlines,
-   we keep the Butterick treatment from synthesis §4 — color denotes
-   clickability, no underline, hover paints a soft accent wash. */
-
-/* Internal / node links. The hover wash hugs the glyphs ("D1" — Round 2 chose
-   breathing-room padding, but that was walked back 2026-06-09 after the EB
-   Garamond switch: tight looks better with this face). */
 a.node-link,
 .node-mainmatter a[href^="http"]:not(.node-link) {
   color: var(--color-link);
@@ -819,15 +667,12 @@ a.node-link,
   transition: background-color var(--transition-fast);
 }
 
-/* Visited links keep the link color (Round 2 decision — see 01-tokens.css). */
-
 a.node-link:hover,
 .node-mainmatter a[href^="http"]:not(.node-link):hover {
   background-color: var(--color-accent-hover);
 }
 
-/* Formal result references. Authored body-less links to theorem-like nodes
-   render as e.g. “Lemma 00ag” */
+/* A body-less link to a theorem-like node, rendered as "Lemma 00ag". */
 a.node-link.node-ref {
   white-space: nowrap;
 }
@@ -839,16 +684,7 @@ a.node-link.node-ref .node-ref-address {
   letter-spacing: -0.02em;
 }
 
-/* Citations: every cited reference is a per-entry `a.node-link` (covered above),
-   so each carries the link color + hover wash. The surrounding punctuation
-   (enclosing parens, the "; " delimiter) is plain text and stays body text
-   color — nothing extra is needed here. */
-
-/* External links — same blue as node links, plus a Butterick-inspired degree
-   marker to distinguish off-site navigation without adding an underline. The
-   marker uses body text color so it reads as punctuation rather than a second
-   competing accent. Internal node links use relative hrefs, so this attribute
-   selector only catches genuine off-site links. */
+/* External links in the mainmatter get a degree sign. */
 .node-mainmatter a[href^="http"]:not(.node-link)::after {
   content: "\FEFF°";
   display: inline-block;
@@ -858,17 +694,8 @@ a.node-link.node-ref .node-ref-address {
   text-decoration: none;
 }
 
+/* Transclusions: collapsible blocks, each indented from its container. */
 
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 07-transclusions — transcluded node blocks, ported from hanwen's
-   `.block` + `details/summary` disclosure. A collapsible block with a leading
-   ▸/▾ marker, a numbered title, and a subtle hover wash on nested blocks. */
-
-/* Every transclusion block (outermost included) is indented from its
-   container. Indent is margin-based, so nesting steps right cumulatively. No
-   left rule — the indent alone carries the hierarchy. Round A3 (2026-07-02)
-   halved the original 0.75rem step: with the block wash gone and code blocks
-   bare, the lighter step reads better while still marking nesting. */
 .transclusion.block {
   margin-inline-start: 0.375rem;
   padding-inline: 0.25rem 0.375rem;
@@ -876,10 +703,7 @@ a.node-link.node-ref .node-ref-address {
   border-radius: var(--radius);
 }
 
-/* Hover wash on the summary row only — Round A2 (2026-07-02) replaced
-   hanwen's whole-block wash, which stacked on nesting and was near-constant
-   on Agda module pages. The summary is the block's one real click target
-   (the disclosure toggle), so it alone advertises interactivity. */
+/* Only the summary, which toggles the block, has a hover wash. */
 .transclusion-summary {
   display: flex;
   align-items: baseline;
@@ -895,9 +719,7 @@ a.node-link.node-ref .node-ref-address {
   background-color: var(--color-accent-hover);
 }
 
-/* Disclosure: hide the native marker; Round μ moved the triangle to a leading
-   fixed-width slot, which reads more like an outline control than title
-   punctuation. */
+/* The native marker is replaced by a triangle in a fixed-width slot. */
 .transclusion-summary::before {
   content: "▸";
   flex: 0 0 0.8em;
@@ -915,14 +737,9 @@ a.node-link.node-ref .node-ref-address {
   display: none;
 }
 
-/* Transcluded frontmatter — the same Round-F3 key/value grid as the top-level
-   node header (04-node-header owns the shared grid + chip rules); a
-   transclusion is a compact embedded node, so the block only scales down and
-   tightens here. */
+/* Transclusions' metadata uses the node header's grid, smaller and tighter. */
 .transclusion-meta {
   margin-block-start: 0.35rem;
-  /* Track the top-level dial-in tokens at ~93%/75%, so the F4 sliders move
-     both blocks together. */
   font-size: calc(var(--font-size-xs) * var(--meta-font-scale) * 0.93);
   column-gap: calc(var(--meta-key-gap) * 0.75);
   row-gap: 0.25rem;
@@ -932,22 +749,13 @@ a.node-link.node-ref .node-ref-address {
   margin-block-start: var(--space-sm);
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 08-backmatter — what remains at the bottom of the reading column after the
-   Round L amendment: section.backmatter now holds only the References
-   bibliography (contexts/backlinks/related live in the rail; their typography
-   is 05-toc's, their spacing is below). The "Backmatter" h2 is retired
-   (2026-06-11): the References section heading speaks for itself. */
+/* Backmatter: the references at the foot of the reading column, and the
+   spacing of the rail's sections. */
 
 .backmatter {
   margin-block-start: var(--space-xl);
   padding-block-start: var(--space-lg);
-  /* Hairline matched to the frontmatter divider (Modus bg-inactive) — the
-     border token read darker/thicker next to it (user call, 2026-06-10). */
   border-block-start: 1px solid var(--color-rule);
-  /* Round L2 "LL3" (2026-06-11): 0.85×body — a step up from the old
-     --font-size-sm (0.8×) now that References stands alone down here. */
   font-size: calc(var(--font-size-base) * 0.85);
 }
 
@@ -960,20 +768,17 @@ a.node-link.node-ref .node-ref-address {
   margin-block-end: var(--space-xs);
 }
 
-/* The References heading is the block's only title since the "Backmatter" h2
-   retired — Round L2 "LK2" (2026-06-11): one step up to heading-md to hold
-   the hierarchy. (The rail's section titles are styled in 05-toc.) */
+/* The References heading is the only heading at the foot of the column. */
 .backmatter .backmatter-section-title {
   font-size: var(--font-size-heading-md);
 }
 
-/* Rail link sections (contexts/backlinks/related) — spacing within the rail
-   stack; the rail voice itself (font, size, color, headings) is in 05-toc. */
+/* The rail's sections */
 .node-rail > .backmatter-section {
   margin-block: var(--space-lg) 0;
 }
 
-/* Node lists (contexts/backlinks/related). */
+/* Node lists */
 .node-list {
   list-style: none;
   padding-inline-start: 0;
@@ -984,14 +789,9 @@ a.node-link.node-ref .node-ref-address {
   padding-block: 0.0625rem;
 }
 
-/* References bibliography. The list is Typst's native bibliography output:
-   section[role="doc-bibliography"] > ul > li#loc-N (no per-entry node links —
-   in-text citations carry the navigation; see library/citations.typ). The CSL
-   style requests hanging indent via the .hanging-indent class. */
+/* Typst's bibliography. The CSL style asks for a hanging indent. */
 [role="doc-bibliography"] ul {
   list-style: none;
-  /* Override the inline `list-style-type: none` the bibliography ships with by
-     also clearing the list padding the UA adds. */
   padding-inline-start: 0;
   margin: 0;
 }
@@ -1005,20 +805,13 @@ a.node-link.node-ref .node-ref-address {
   text-indent: -1.5rem;
 }
 
-/* Defensive: render-node emits the References section from the citation graph,
-   while the native bibliography lists only #cited works. If they ever diverge
-   (a reference linked but never cited), hide the empty shell. */
+/* Hide the References section if none of its references was cited. */
 .backmatter-section:has([role="doc-bibliography"] ul:empty) {
   display: none;
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 09-theorems — theorem / proof environments. hanwen has no equivalent, so
-   Round M styles these in a conventional amsthm voice: unboxed theorem-like
-   environments, run-in bold upright heads, italic assertion bodies (theorem /
-   lemma / corollary / proposition) and upright definitional/expository bodies,
-   plus run-in proofs with an italic "Proof." head and a right-edge QED box. */
+/* Theorems and proofs, set as amsthm does: run-in bold heads, italic bodies
+   for assertions, and proofs with an italic head and a closing square. */
 
 .theorem,
 .proof {
@@ -1038,9 +831,7 @@ a.node-link.node-ref .node-ref-address {
   font-weight: 700;
 }
 
-/* The parenthetical note after the head: `(name; citation)`. Parens and the
-   separator are generated here (the `see`/`cf.` prefix is content — it changes
-   meaning); the citation links inside keep the normal 06-links treatment. */
+/* The parenthetical after the head: `(name; citation)`. */
 .theorem-note::before {
   content: " (";
 }
@@ -1074,9 +865,7 @@ a.node-link.node-ref .node-ref-address {
   font-style: italic;
 }
 
-/* Proof. `flow-root` contains the floated QED so it cannot drift into the
-   following paragraph; the first and last proof paragraphs run into the header
-   and the QED respectively, matching ordinary math-paper typography. */
+/* `flow-root` contains the floated square. */
 .proof {
   display: flow-root;
 }
@@ -1091,12 +880,9 @@ a.node-link.node-ref .node-ref-address {
   display: contents;
 }
 
-/* The header is floated (not inlined), so every proof paragraph stays
-   block-level and breaks normally. The first paragraph's first line wraps
-   beside "Proof."; only the last paragraph runs inline so the floated QED
-   hugs the end of its last line. (Inlining the first paragraph too would
-   collapse a two-paragraph proof onto one line: with exactly two paragraphs
-   both :first-child and :last-child match.) */
+/* The header floats, so the first paragraph wraps beside it and stays a block.
+   The last paragraph is inline, so that the square follows its last line.
+   Making the first inline too would join a two-paragraph proof into one line. */
 .proof-body > p:first-child {
   margin-block-start: 0;
 }
@@ -1106,9 +892,7 @@ a.node-link.node-ref .node-ref-address {
   margin-block-end: 0;
 }
 
-/* LaTeX/amsthm-style open square. Draw it with CSS rather than using the font's
-   □ glyph: EB Garamond's glyph is heavy and slightly rectangular, while
-   amsthm's `\openbox` is a fine-rule square. */
+/* An open square drawn with a border, finer than EB Garamond's glyph. */
 .qed {
   float: inline-end;
   margin-inline-start: 0.5em;
@@ -1124,22 +908,16 @@ a.node-link.node-ref .node-ref-address {
   border: 1px solid currentColor;
 }
 
-
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 10-popover — hover note previews (JS island, see HTML_CONTRACT.md).
-   The card is appended to <body> by assets/popover.ts and filled with a clone of
-   the target node's `header.node-header` plus its `.node-mainmatter`, which
-   keep their contract classes so the rules in 02/04/06/07/09 style the
-   preview content. Layout rules don't leak in: 03-layout places header and
-   mainmatter only via the `article.node >` child combinator. */
+/* Popovers: the card popover.ts fills with a clone of a node's header and
+   mainmatter, which the rules above style. The layout rules do not apply
+   inside it, since they select only children of `article.node`. */
 
 .popover {
 
   position: absolute;
   z-index: 10;
   display: none;
-  /* border-box so the JS height clamp in assets/popover.ts and offsetHeight
-     measure the same box (the stylesheet has no global box-sizing rule). */
+  /* So that popover.ts's height cap and offsetHeight measure the same box. */
   box-sizing: border-box;
   width: min(34rem, 85vw);
   max-height: 24rem;
@@ -1147,21 +925,16 @@ a.node-link.node-ref .node-ref-address {
   overscroll-behavior: contain;
   padding: var(--space-md);
   background: var(--color-background);
-  /* Hairline border (Modus bg-inactive) — quieter than the border token, to
-     match the property divider in 04-node-header. Tuner PE pick. */
   border: 1px solid var(--color-rule);
   border-radius: var(--radius);
   box-shadow: 0 0.375rem 1.5rem light-dark(rgb(0 0 0 / 0.15), rgb(0 0 0 / 0.6));
-  /* Preview voice: the body face a step down from reading size. */
   font-family: var(--font-body);
   font-size: var(--font-size-sm);
   line-height: var(--line-height-base);
   color: var(--color-text);
 }
 
-/* Entry-only motion: a subtle fade + rise as the card appears (exit stays
-   instant). @starting-style sets the pre-open state; display is animated with
-   allow-discrete so the transition runs on the none→block switch. */
+/* Fade in and rise on appearing; disappearing is instant. */
 .popover.visible {
   display: block;
   transition:
@@ -1177,13 +950,11 @@ a.node-link.node-ref .node-ref-address {
   }
 }
 
-/* The cloned node header: card-scale title with the taxon chip riding the
-   title line. The rest of the metadata table (id, tags) stays hidden —
-   previews are content-first. Tuner PM pick. */
+/* The cloned header: the title with the taxon chip beside it, and no other
+   metadata. */
 .popover .node-header {
   flex-direction: row;
   flex-wrap: wrap;
-  /* The small taxon chip sits vertically centered against the title. */
   align-items: center;
   column-gap: 0.5em;
   margin-block-end: var(--space-sm);
@@ -1194,9 +965,8 @@ a.node-link.node-ref .node-ref-address {
   line-height: var(--line-height-heading);
 }
 
-/* Flatten the dl grid so the taxon dd becomes a flex sibling of the title;
-   hide every other row. The dd keeps the chip span, which 04-node-header
-   styles. */
+/* Flatten the metadata so that the taxon's dd is a flex item beside the title,
+   and hide the rest. */
 .popover .node-meta {
   display: contents;
 }
@@ -1215,12 +985,10 @@ a.node-link.node-ref .node-ref-address {
 
 .popover .node-meta .node-meta-taxon dd {
   margin: 0;
-  order: 2; /* after the title (.node-title is order: 1 in 04-node-header) */
+  order: 2; /* after the title */
 }
 
-/* The cloned mainmatter inherits the card's reduced size; heading rules in
-   02-base set absolute sizes, so pull them back to a card-relative scale that
-   keeps a hint of hierarchy (h2/h3 a touch larger than the rest). */
+/* Headings shrink with the card, keeping a little hierarchy. */
 .popover .node-mainmatter :is(h2, h3, h4, h5, h6) {
   font-size: 1em;
 }
@@ -1233,31 +1001,15 @@ a.node-link.node-ref .node-ref-address {
   font-size: 1.07em;
 }
 
-/* Previews are content-first: drop the per-transclusion metadata block (the
-   outer node's metadata is already hidden above). */
+/* Transclusions' metadata is hidden too. */
 .popover .transclusion-meta {
   display: none;
 }
 
-/* Agda type popups (the second preview kind in assets/popover.ts): hovering
-   an identifier in an annotated code block shows its definition's declared
-   type from types/<Module>.json. A compact code chip rather than the page
-   card — shrink-wrapped, mono, no internal scroll (a long type wraps).
-
-   Round A4 (2026-07-02), settled & baked:
-   - Wrap policy "before arrows" (over wrap-anywhere and atomic-groups): the
-     type splits at top-level ` → ` into inline-block segments, so a line may
-     break only where a segment drops, and bracket groups hold together — a
-     wrapped signature breaks before arrows, like hand-formatted Agda.
-   - Hanging indent 2ch (over none/4ch) — the corpus's own continuation
-     indent.
-   - max-width 44rem (~76 mono chars; most signatures fit 1-2 lines) over
-     the node-preview card's 34rem.
-   - Signature ink: plain ink, padding 0 — neutralizes 02-base's inline-code
-     tint (`code:not(pre code)`: emphasis pink + 0.2em padding), which made
-     the signature read as an inline-code span.
-   - Identifier stays link blue (echoes the hovered token); compact density
-     kept. */
+/* Agda type popups: the type of an identifier's definition, in a card as wide
+   as its contents up to a maximum. The signature has a 2ch hanging indent, a
+   long type wraps before its arrows (see popover.ts), and the inline-code
+   color is cleared. */
 .popover.agda-type-popover {
   width: max-content;
   max-width: min(44rem, 85vw);
@@ -1266,9 +1018,7 @@ a.node-link.node-ref .node-ref-address {
   font-size: var(--font-size-xs);
 }
 
-/* Block so the hanging indent applies to wrapped lines; pre-wrap so the
-   spaces between segments hold (popover.ts collapses the pretty-printer's
-   newlines before segmenting — over half the corpus's types carry them). */
+/* `pre-wrap` keeps the spaces between segments. */
 .popover.agda-type-popover .agda-type-signature {
   display: block;
   white-space: pre-wrap;
@@ -1277,9 +1027,8 @@ a.node-link.node-ref .node-ref-address {
   text-indent: -2ch;
 }
 
-/* Segments drop to the next line as units (breaks land before arrows);
-   text-indent:0 stops the hanging indent from inheriting in and shifting a
-   segment's first line over its neighbour. */
+/* A segment drops to the next line whole; `text-indent: 0` keeps the hanging
+   indent from applying inside it. */
 .popover.agda-type-popover .agda-type-segment {
   display: inline-block;
   text-indent: 0;
@@ -1290,29 +1039,20 @@ a.node-link.node-ref .node-ref-address {
   white-space: nowrap;
 }
 
-/* Round A5 (2026-07-02): a type that can't share the name's line starts on
-   the line after it. inline-block gives the conditional for free — the body
-   stays inline when it fits (single-line popups unchanged), else drops to
-   the next line whole and wraps internally at the 2ch indent. Chosen over
-   inline-after-name flow. (The card hugging the widest rendered line after
-   this drop is done in popover.ts — intrinsic CSS widths can't see where
-   lines actually broke.) */
+/* A type that does not fit on the name's line starts on the next one. */
 .popover.agda-type-popover .agda-type-body {
   display: inline-block;
   vertical-align: top;
   text-indent: 0;
 }
 
-/* The identifier echoes the hovered token; link blue = the defined-name hue
-   (12-agda), the type text stays plain ink. */
+/* The name has the link color, as in the block. */
 .popover.agda-type-popover .agda-type-name {
   color: var(--color-link);
 }
 
-
-/* Command-palette search (assets/search.ts). Baseline styling: a centered modal
- * dialog near the top of the viewport, a surface card matching the popover, and
- * result rows that reuse the site's taxon/tag chips. */
+/* Search: a modal dialog near the top of the viewport, whose results reuse the
+   taxon and tag chips. */
 
 .search-dialog {
   margin: 12vh auto auto;
@@ -1430,7 +1170,7 @@ a.node-link.node-ref .node-ref-address {
 .search-result-excerpt {
   font-size: var(--font-size-xs);
   color: color-mix(in oklab, var(--color-text) 70%, transparent);
-  /* Keep rows compact: clamp the excerpt to two lines. */
+  /* Clamp the excerpt to two lines. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1444,35 +1184,11 @@ a.node-link.node-ref .node-ref-address {
   border-radius: 2px;
 }
 
+/* Agda blocks. Every identifier is a link (or, for one with no page, a span
+   with `data-agda-def`), so colors come from the aspect classes rather than
+   from link styling. The palette maps 1lab's onto Modus hues. */
 
-/* SPDX-License-Identifier: CC0-1.0 */
-/* 12-agda — token styling for the annotated Agda blocks emitted by
-   library/agda.typ (see .scratch/agda-annotations.md). Every identifier token
-   is an <a> carrying its definition link — including bound variables, which
-   link to their binder — so color keys off the aspect classes, not
-   anchor-ness: browser-default link styling would paint half of every block
-   blue-underlined.
-
-   Tuner rounds A1–A3, all settled & baked 2026-07-02:
-   - A1: the "semantic" palette — 1lab's scheme translated into Modus hues —
-     chosen over monochrome, Verso-style ink-only, and a single-accent
-     "two-ink". Symbols faded (the biggest class, ~19k tokens: structure
-     recedes, names pop); bound variables stay plain (Verso and 1lab both
-     leave locals quiet); token links get the node-link hover wash.
-   - A2: defined names keep the site link blue (over cyan/violet/cyan-cooler);
-     types split from functions per Modus's own mapping (cyan-cooler);
-     code-block surface removed (02-base) and transclusion hover reduced to
-     the summary row (07-transclusions).
-   - A3: type hue stays cyan-cooler (over cyan/violet); Module takes the
-     inline-code emphasis pink (magenta-warmer, over magenta/violet), pushing
-     Number to blue-cooler; keywords stay yellow-warmer (over yellow/
-     red-warmer); transclusion indent halved (07-transclusions). */
-
-/* Token links inherit by default; the aspect classes below add color.
-   Builtin identifiers (defined outside the corpus, e.g. Agda.Primitive) are
-   spans carrying data-agda-def — no page to link to, but they hover a type
-   popup, so they share the link affordance. Bound variables are plain spans
-   with neither (unlinked; settled 2026-07-03) and get no wash. */
+/* Identifiers have a hover wash, since hovering shows their type. */
 pre.Agda a,
 pre.Agda [data-agda-def] {
   color: inherit;
@@ -1486,16 +1202,14 @@ pre.Agda [data-agda-def]:hover {
   background-color: var(--color-accent-hover);
 }
 
-/* Defined names — everything with a navigable definition site. Link blue:
-   color denotes clickability, the site's own idiom. */
+/* Defined names have the link color. */
 pre.Agda .Function,
 pre.Agda .Postulate,
 pre.Agda .Primitive {
   color: var(--color-link);
 }
 
-/* Types split off from functions (Round A2, 2026-07-02), following Modus's
-   own font-lock mapping (types → cyan-cooler). */
+/* Types */
 pre.Agda .Datatype,
 pre.Agda .Record {
   color: light-dark(#005f5f, #6ae4b9); /* cyan-cooler */
@@ -1510,8 +1224,7 @@ pre.Agda .CoinductiveConstructor {
   color: light-dark(#006800, #44bc44); /* green */
 }
 
-/* Round A3 (2026-07-02): magenta-warmer via the emphasis token — the same
-   pink as inline-code spans, chosen over plain magenta and magenta-cooler. */
+/* The inline-code color. */
 pre.Agda .Module {
   color: var(--color-text-emphasis);
 }
@@ -1521,8 +1234,7 @@ pre.Agda .Field {
 }
 
 pre.Agda .Number {
-  /* blue-cooler (Modus's "constant" hue) — vacated magenta-warmer when
-     Module took it (Round A3). */
+  /* blue-cooler */
   color: light-dark(#0000b0, #00bcff);
 }
 
@@ -1532,8 +1244,7 @@ pre.Agda .Pragma {
   font-style: italic;
 }
 
-/* Symbols & punctuation (`:` `=` `→`, parens) — faded, so the names carry
-   the block. */
+/* Symbols and punctuation are faded, so that the names stand out. */
 pre.Agda .Symbol {
   color: var(--color-text-faded);
 }
