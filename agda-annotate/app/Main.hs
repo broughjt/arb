@@ -44,6 +44,7 @@ import Agda.Syntax.Info (exprNoRange)
 import qualified Agda.Syntax.Internal as I
 import qualified Agda.Syntax.Internal.Generic as I
 import Agda.Syntax.Position
+import Agda.Syntax.Scope.Base (recomputeInverseScope')
 import Agda.Syntax.Translation.InternalToAbstract (reify)
 import qualified Agda.TypeChecking.Monad.Base as TCM
 import Agda.TypeChecking.Errors (prettyError)
@@ -132,7 +133,10 @@ annotate files = do
         name = iTopLevelModuleName interface
     setInterface interface
     definitions <- map snd . sortDefs <$> curDefs
-    types <- evalWithScope (iInsideScope interface) (mapM typeEntry definitions)
+    -- A scope read from an interface has no inverse maps, without which every
+    -- name is printed fully qualified.
+    types <- evalWithScope (recomputeInverseScope' (iInsideScope interface))
+                           (mapM typeEntry definitions)
     let blocks =
           codeBlocks (tokens (iSource interface) (iHighlighting interface))
     pure Annotations

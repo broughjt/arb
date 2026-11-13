@@ -5,7 +5,7 @@
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     agda = {
-      url = "github:agda/agda";
+      url = "github:agda/agda/v2.9.0";
       flake = false;
     };
   };
@@ -98,7 +98,7 @@
               }
             ]);
 
-        # Agda's master branch, with the changes nixpkgs makes to its own Agda.
+        # Agda 2.9.0, with the changes nixpkgs makes to its own Agda.
         haskellPackages = pkgs.haskellPackages.override {
           overrides = self: super: {
             Agda = pkgs.lib.pipe (self.callCabal2nix "Agda" agda { }) (with pkgs.haskell.lib.compose; [
@@ -112,10 +112,12 @@
                 '';
               }))
               enableSeparateBinOutput
-              # Nothing here uses the profiling libraries or the documentation,
-              # and building them would more than double the build time.
+              # Nothing here uses the profiling libraries, the documentation or
+              # the test suite, and building them would more than double the
+              # build time.
               disableLibraryProfiling
               dontHaddock
+              dontCheck
             ]);
           };
         };
