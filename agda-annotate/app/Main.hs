@@ -26,7 +26,7 @@ import System.Environment (getArgs)
 import System.Exit (die)
 import System.FilePath ((</>), (<.>), takeDirectory)
 
-import Agda.Compiler.Backend
+import Agda.Compiler.Backend hiding ((.=))
 import Agda.Compiler.Common (curDefs, setInterface, sortDefs)
 import Agda.Interaction.Highlighting.Precise hiding (toList)
 import Agda.Interaction.Imports
@@ -132,7 +132,7 @@ annotate files = do
         name = iTopLevelModuleName interface
     setInterface interface
     definitions <- map snd . sortDefs <$> curDefs
-    types <- withScope_ (iInsideScope interface) (mapM typeEntry definitions)
+    types <- evalWithScope (iInsideScope interface) (mapM typeEntry definitions)
     let blocks =
           codeBlocks (tokens (iSource interface) (iHighlighting interface))
     pure Annotations

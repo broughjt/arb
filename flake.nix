@@ -1,13 +1,16 @@
 {
   description = "A personal ripoff of forester for scientific Zettelkasten notes in Typst";
 
-  # TODO: Run `nix flake update` once we match the build oracle
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    agda = {
+      url = "github:agda/agda";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, agda }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -95,8 +98,30 @@
               }
             ]);
 
+        # Agda's master branch, with the changes nixpkgs makes to its own Agda.
+        haskellPackages = pkgs.haskellPackages.override {
+          overrides = self: super: {
+            Agda = pkgs.lib.pipe (self.callCabal2nix "Agda" agda { }) (with pkgs.haskell.lib.compose; [
+              (enableCabalFlag "optimise-heavily")
+              (enableCabalFlag "debug")
+              (overrideCabal (drv: {
+                mainProgram = "agda";
+                postInstall = drv.postInstall or "" + ''
+                  agdaExe=''${bin:-$out}/bin/agda
+                  (cd "$("$agdaExe" --print-agda-data-dir)/lib/prim" && "$agdaExe" --build-library)
+                '';
+              }))
+              enableSeparateBinOutput
+              # Nothing here uses the profiling libraries or the documentation,
+              # and building them would more than double the build time.
+              disableLibraryProfiling
+              dontHaddock
+            ]);
+          };
+        };
+
         agda-annotate = pkgs.haskell.lib.justStaticExecutables
-          (pkgs.haskellPackages.callCabal2nix "agda-annotate" ./agda-annotate { });
+          (haskellPackages.callCabal2nix "agda-annotate" ./agda-annotate { });
 
         racketDependencies = pkgs.callPackage ./nix/racket-dependencies.nix { };
 
@@ -164,11 +189,13 @@
 
         packages = {
           inherit agda-annotate arb;
+          agda = haskellPackages.Agda.bin;
         };
 
         devShells.default = pkgs.mkShellNoCC {
           packages = with pkgs; [
             arb
+            self.packages.${system}.agda
             racket
             typst
           ];
