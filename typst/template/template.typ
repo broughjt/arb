@@ -61,18 +61,18 @@
 
 // Node header
 
+#let tag-hue(tag) = {
+  let hash = 0
+  for c in tag.codepoints() {
+    hash = calc.rem(hash * 31 + c.to-unicode(), 997)
+  }
+  ("red", "yellow", "green", "cyan", "blue", "magenta").at(calc.rem(hash, 6))
+}
+
 // `node` is a template node
 #let render-node-meta(node, class: "node-meta", aria-label: "Node metadata") = {
   let taxon = node.taxon
   let tags = node.tags
-
-  let tag-hue(tag) = {
-    let hash = 0
-    for c in tag.codepoints() {
-      hash = calc.rem(hash * 31 + c.to-unicode(), 997)
-    }
-    ("red", "yellow", "green", "cyan", "blue", "magenta").at(calc.rem(hash, 6))
-  }
 
   html.dl(class: class, aria-label: aria-label)[
     #html.div(class: "node-meta-item node-meta-taxon")[
@@ -257,7 +257,8 @@
   let article = html.article(class: "node")[
     // Pagefind indexes `article.node` but skips `.node-meta`, so the taxon,
     // tags and id it filters and labels results by ride on this hidden element,
-    // which has no text of its own.
+    // which has no text of its own. A tag's filter is named after its hue, so
+    // that search results can color it without hashing it again.
     #html.elem("div", attrs: (
       "class": "pagefind-attrs",
       "hidden": "",
@@ -265,7 +266,7 @@
       "data-pagefind-filter": "taxon:" + node.taxon,
     ))[#node.tags.map(tag => html.elem(
       "span",
-      attrs: ("data-pagefind-filter": "tag:" + tag),
+      attrs: ("data-pagefind-filter": "tag-" + tag-hue(tag) + ":" + tag),
     )).join()]
     #html.header(class: "node-header")[
       #render-node-meta(node)

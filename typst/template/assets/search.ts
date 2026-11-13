@@ -53,18 +53,6 @@ function loadPagefind(): Promise<Pagefind | null> {
   return pagefindPromise;
 }
 
-// --- the same tag-hue hash the template uses (node-metadata.typ) ---------------
-
-const HUES = ["red", "yellow", "green", "cyan", "blue", "magenta"];
-
-function tagHue(tag: string): string {
-  let hash = 0;
-  for (const character of tag) {
-    hash = (hash * 31 + (character.codePointAt(0) ?? 0)) % 997;
-  }
-  return HUES[hash % 6];
-}
-
 // --- palette UI ----------------------------------------------------------------
 
 let dialog: HTMLDialogElement | undefined;
@@ -88,15 +76,17 @@ function renderResults(): void {
   list.replaceChildren();
   for (const [index, fragment] of fragments.entries()) {
     const taxon = fragment.filters.taxon?.[0];
-    const tags = fragment.filters.tag ?? [];
 
     const meta = document.createElement("span");
     meta.className = "search-result-meta";
     if (taxon !== undefined) {
       meta.append(chip("node-taxon", `taxon-${taxon}`, taxon));
     }
-    for (const tag of tags) {
-      meta.append(chip("node-tag", `hue-${tagHue(tag)}`, tag));
+    for (const [name, tags] of Object.entries(fragment.filters)) {
+      if (!name.startsWith("tag-")) continue;
+      for (const tag of tags) {
+        meta.append(chip("node-tag", `hue-${name.slice("tag-".length)}`, tag));
+      }
     }
 
     const title = document.createElement("span");
