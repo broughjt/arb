@@ -75,13 +75,15 @@
 (module+ main
   (match (parse-arguments (current-command-line-arguments))
     [(build-subcommand) (handle-build)]
-    [(watch-subcommand) (handle-watch)]))
+    [(watch-subcommand) (handle-watch)]
+    [(clean-subcommand) (handle-clean)]))
 
 ;; CLI parsing
 
-(define-type Subcommand (U build-subcommand watch-subcommand))
+(define-type Subcommand (U build-subcommand watch-subcommand clean-subcommand))
 (struct build-subcommand () #:transparent)
 (struct watch-subcommand () #:transparent)
+(struct clean-subcommand () #:transparent)
 
 (: parse-arguments (-> (Vectorof String) Subcommand))
 (define (parse-arguments argv)
@@ -92,6 +94,7 @@
    "Commands:"
    "  build  build the site into build/"
    "  watch  rebuild the site whenever a source changes"
+   "  clean  delete build/ and .arb/"
    #:args (subcommand . arguments)
    ;; Typed Racket types the formal arguments of `#:args` as `Any`, so we do a
    ;; runtime check explicitly (that we expect will never fail).
@@ -104,8 +107,9 @@
   (case subcommand
     [("build") (parse-build-subcommand program arguments)]
     [("watch") (parse-watch-subcommand program arguments)]
+    [("clean") (parse-clean-subcommand program arguments)]
     [else (raise-user-error 'arb
-                            "unknown command ~a; expected build or watch"
+                            "unknown command ~a; expected build, watch or clean"
                             subcommand)]))
 
 (: parse-build-subcommand (-> String (Listof String) build-subcommand))
@@ -122,7 +126,14 @@
                 #:args ()
                 (watch-subcommand)))
 
-;; Build and watch implementations
+(: parse-clean-subcommand (-> String (Listof String) clean-subcommand))
+(define (parse-clean-subcommand program arguments)
+  (command-line #:program program
+                #:argv arguments
+                #:args ()
+                (clean-subcommand)))
+
+;; Build, watch and clean implementations
 
 (define staging-directory ".arb/staging")
 
@@ -490,6 +501,19 @@
          (custodian-shutdown-all custodian)
          (delete-directory/files dependencies-path #:must-exist? #f)
          (close-output-port lock))))))
+
+(: handle-clean (-> Void))
+(define (handle-clean)
+  (define root (find-project-root (current-directory)))
+  (parameterize ([current-directory root])
+    (make-directory* ".arb")
+    (define lock (open-output-file ".arb/lock" #:exists 'append))
+    (unless (port-try-file-lock? lock 'exclusive)
+      (raise-user-error 'arb "another build or watch is running in ~a" root))
+    (delete-directory/files "build" #:must-exist? #f)
+    ;; The lock file is inside `.arb/`, so it is deleted while we hold it.
+    (delete-directory/files ".arb")
+    (close-output-port lock)))
 
 ;; Report formatting
 
